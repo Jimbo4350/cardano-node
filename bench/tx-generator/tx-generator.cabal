@@ -52,6 +52,7 @@ library
                        Cardano.Benchmarking.Tracer
                        Cardano.Benchmarking.Types
                        Cardano.Benchmarking.Wallet
+                       Cardano.Benchmarking.PlutusExample
 
   other-modules:       Paths_tx_generator
 
