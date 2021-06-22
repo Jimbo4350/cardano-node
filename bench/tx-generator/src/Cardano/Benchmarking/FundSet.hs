@@ -11,6 +11,7 @@ where
 import           Prelude
 
 import           Data.IxSet.Typed as IxSet
+import           Data.Proxy
 
 import           Cardano.Api as Api
 
@@ -104,3 +105,27 @@ liftAnyEra f x = case x of
   InAnyCardanoEra AllegraEra a ->   InAnyCardanoEra AllegraEra $ f a
   InAnyCardanoEra MaryEra a    ->   InAnyCardanoEra MaryEra $ f a
   InAnyCardanoEra AlonzoEra a  ->   InAnyCardanoEra AlonzoEra $ f a
+
+type FundSelector = FundSet -> Either String [Fund]
+
+-- Select a number of confirmed Fund that where send to a specific Target node.
+-- TODO: dont ignore target.
+selectCountTarget :: Int -> Target -> FundSet -> Either String [Fund]
+selectCountTarget count _target fs =
+  if length funds == count
+    then Right funds
+    else Left "could not find enough input coins"
+  where
+    -- Just take confirmed coins.
+    -- TODO: extend this to unconfimed coins to the same target node
+    funds = take count $ toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed)
+
+-- Select Funds to cover a minimum value.
+-- TODO:
+-- This fails unless there is a single fund with the required value
+-- Extend this to really return a list of funds.
+selectMinValue :: Lovelace -> FundSet -> Either String [Fund]
+selectMinValue minValue fs = case coins of
+    [] -> Left $ "findSufficientCoin: no single coin with min value >= " ++ show minValue
+    (c:_) -> Right [c]
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed @>= minValue)
