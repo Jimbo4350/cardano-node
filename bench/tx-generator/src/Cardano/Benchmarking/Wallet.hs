@@ -130,6 +130,7 @@ genTx key networkId inFunds outValues validity
     , _fundVal = mkTxOutValueAdaOnly val
     , _fundSigningKey = key
     , _fundValidity = validity
+    , _fundVariant = PlainOldFund
     }
 
 benchmarkTransaction ::

@@ -22,8 +22,12 @@ data FundInEra era = FundInEra {
     _fundTxIn :: !TxIn
   , _fundVal  :: !(TxOutValue era)
   , _fundSigningKey :: !(SigningKey PaymentKey)
+  , _fundVariant :: !Variant
   , _fundValidity :: !Validity
   } deriving (Show)
+
+data Variant = PlainOldFund | PlutusScriptFund
+  deriving  (Show, Eq, Ord)
 
 data Validity
   = Confirmed
@@ -37,6 +41,9 @@ newtype SeqNumber = SeqNumber Int
   deriving  (Show, Eq, Ord, Enum)
 
 newtype Fund = Fund {unFund :: InAnyCardanoEra FundInEra}
+
+getFundVariant :: Fund -> Variant
+getFundVariant (Fund (InAnyCardanoEra _ a)) = _fundVariant a
 
 getFundTxIn :: Fund -> TxIn
 getFundTxIn (Fund (InAnyCardanoEra _ a)) = _fundTxIn a
@@ -72,7 +79,7 @@ instance Eq Fund where
 instance Ord Fund where
   compare a b = compare (getFundTxIn a) (getFundTxIn b)
 
-type FundIndices = '[ TxIn, IsConfirmed, Target, SeqNumber, Lovelace ]
+type FundIndices = '[ TxIn, IsConfirmed, Target, SeqNumber, Lovelace, Variant ]
 type FundSet = IxSet FundIndices Fund
 
 instance Indexable FundIndices Fund where
@@ -88,6 +95,7 @@ instance Indexable FundIndices Fund where
       InFlight _ n -> [ n ]
     )
     (ixFun $ \f -> [ getFundLovelace f ])
+    (ixFun $ \f -> [ getFundVariant f ])
 
 emptyFunds :: FundSet
 emptyFunds = IxSet.empty
@@ -118,7 +126,7 @@ selectCountTarget count _target fs =
   where
     -- Just take confirmed coins.
     -- TODO: extend this to unconfimed coins to the same target node
-    funds = take count $ toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed)
+    funds = take count $ toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed)
 
 -- Select Funds to cover a minimum value.
 -- TODO:
@@ -128,4 +136,4 @@ selectMinValue :: Lovelace -> FundSet -> Either String [Fund]
 selectMinValue minValue fs = case coins of
     [] -> Left $ "findSufficientCoin: no single coin with min value >= " ++ show minValue
     (c:_) -> Right [c]
-    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed @>= minValue)
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed @>= minValue)

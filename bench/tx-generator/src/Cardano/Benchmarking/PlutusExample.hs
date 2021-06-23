@@ -60,8 +60,8 @@ payToScript key (script, txOutDatumHash) networkId inFunds outValues validity
     , _fundVal = mkTxOutValueAdaOnly val
     , _fundSigningKey = key
     , _fundValidity = validity
+    , _fundVariant = PlutusScriptFund
     }
-
 
 readScript :: FilePath -> IO (Script PlutusScriptV1)
 readScript fp = do

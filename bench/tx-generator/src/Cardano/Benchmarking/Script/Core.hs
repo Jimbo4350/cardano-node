@@ -35,7 +35,7 @@ import           Cardano.Api ( AsType(..), CardanoEra(..), InAnyCardanoEra(..), 
                              , chainTipToChainPoint )
 
 import qualified Cardano.Benchmarking.FundSet as FundSet
-import           Cardano.Benchmarking.FundSet (FundInEra(..), Validity(..), liftAnyEra )
+import           Cardano.Benchmarking.FundSet (FundInEra(..), Validity(..), Variant(..), liftAnyEra )
 import qualified Cardano.Benchmarking.GeneratorTx as GeneratorTx
                    (asyncBenchmark, waitBenchmark, walletBenchmark
                    , readSigningKey, secureGenesisFund, splitFunds, txGenerator)
@@ -346,6 +346,7 @@ initGlobalWallet networkId key ((txIn, outVal), skey) = do
   , _fundVal = value
   , _fundSigningKey = skey
   , _fundValidity = Confirmed
+  , _fundVariant = PlainOldFund
   }
 
 {-
@@ -364,6 +365,7 @@ fi
 
 createChangePlutus :: Lovelace -> Int -> ActionM ()
 createChangePlutus value count = do
+  createChange (value * 35) count -- create some regular change first
   walletRef <- get GlobalWallet
   networkId <- get NetworkId
   fundKey <- getName $ KeyName "pass-partout"
