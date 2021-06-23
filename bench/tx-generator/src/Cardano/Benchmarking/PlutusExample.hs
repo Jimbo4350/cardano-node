@@ -15,19 +15,18 @@ import Cardano.Api
 import Cardano.Benchmarking.FundSet
 import Cardano.Benchmarking.GeneratorTx.Tx (mkFee, mkTxOutValueAdaOnly )
 
--- genTx assumes that inFunds and outValues are of equal value.
+import Cardano.Benchmarking.Wallet
+
 payToScript ::
-     (Script PlutusScriptV1, Hash ScriptData)
+      SigningKey PaymentKey
+  -> (Script PlutusScriptV1, Hash ScriptData)
   -> NetworkId
-  -> [Fund]
-  -> [Lovelace]
-  -> Either String (Tx AlonzoEra, TxId)
-payToScript (script, txOutDatumHash) networkId inFunds outValues
+  -> TxGenerator AlonzoEra
+payToScript key (script, txOutDatumHash) networkId inFunds outValues validity
   = case makeTransactionBody txBodyContent of
       Left err -> error $ show err
       Right b -> Right ( signShelleyTransaction b (map (WitnessPaymentKey . getFundKey) inFunds)
-                       , getTxId b
-                       )
+                         , newFunds $ getTxId b                       )
  where
   txBodyContent = TxBodyContent {
       txIns = map (\f -> (getFundTxIn f, BuildTxWith $ KeyWitness KeyWitnessForSpending)) inFunds
@@ -52,6 +51,17 @@ payToScript (script, txOutDatumHash) networkId inFunds outValues
                        networkId
                        (PaymentCredentialByScript $ hashScript script)
                        NoStakeAddress
+
+  newFunds txId = zipWith (mkNewFund txId) [TxIx 0 ..] outValues
+
+  mkNewFund :: TxId -> TxIx -> Lovelace -> Fund
+  mkNewFund txId txIx val = Fund $ InAnyCardanoEra AlonzoEra $ FundInEra {
+      _fundTxIn = TxIn txId txIx
+    , _fundVal = mkTxOutValueAdaOnly val
+    , _fundSigningKey = key
+    , _fundValidity = validity
+    }
+
 
 readScript :: FilePath -> IO (Script PlutusScriptV1)
 readScript fp = do
