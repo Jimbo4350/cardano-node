@@ -58,8 +58,7 @@ action a = case a of
   PrepareTxList name key fund -> prepareTxList name key fund
   AsyncBenchmark thread txs tps -> asyncBenchmark thread txs tps
   ImportGenesisFund genesisKey fundKey -> importGenesisFund genesisKey fundKey
---  CreateChange value count -> createChange value count
-  CreateChange value count -> createChangePlutus value count
+  CreateChange value count -> createChange value count
   RunBenchmark thread count tps -> runBenchmark thread count tps
   WaitBenchmark thread -> waitBenchmark thread
   CancelBenchmark thread -> cancelBenchmark thread

@@ -32,6 +32,12 @@ initWallet network key = newMVar $ Wallet {
   , walletFunds = emptyFunds
   }
 
+
+askWalletRef :: WalletRef -> (Wallet -> a) -> IO a
+askWalletRef r f = do
+  w <- readMVar r
+  return $ f w
+
 modifyWalletRef :: WalletRef -> (Wallet -> IO (Wallet, a)) -> IO a
 modifyWalletRef = modifyMVar
 
@@ -179,58 +185,8 @@ benchmarkWalletScript wRef (NumberOfTxs maxCount) (NumberOfOutputsPerTx numInput
 
   txGenerator w = genTx (walletKey w) (walletNetworkId w)
 
-{-
--- genTx assumes that inFunds and outValues are of equal value.
-genTx2 :: forall era.
-     IsShelleyBasedEra era
-  => SigningKey PaymentKey
-  -> NetworkId
-  -> CardanoEra era
-  -> [Fund]
-  -> Validity
-  -> [Lovelace]
-  -> Either String (Tx era, [Fund])
-genTx2 key networkId era inFunds validity outValues
-  = case makeTransactionBody txBodyContent of
-      Left err -> error $ show err
-      Right b -> Right ( signShelleyTransaction b (map (WitnessPaymentKey . getFundKey) inFunds)
-                       , newFunds $ getTxId b
-                       )
- where
-  txBodyContent = TxBodyContent {
-      txIns = map (\f -> (getFundTxIn f, BuildTxWith $ KeyWitness KeyWitnessForSpending)) inFunds
-    , txInsCollateral = TxInsCollateralNone
-    , txOuts = map mkTxOut outValues
-    , txFee = mkFee 0
-    , txValidityRange = (TxValidityNoLowerBound, upperBound)
-    , txMetadata = TxMetadataNone
-    , txAuxScripts = TxAuxScriptsNone
-    , txExtraScriptData = BuildTxWith TxExtraScriptDataNone
-    , txExtraKeyWits = TxExtraKeyWitnessesNone
-    , txProtocolParams = BuildTxWith Nothing
-    , txWithdrawals = TxWithdrawalsNone
-    , txCertificates = TxCertificatesNone
-    , txUpdateProposal = TxUpdateProposalNone
-    , txMintValue = TxMintNone
-    }
-
-  mkTxOut v = TxOut (Tx.keyAddress @ era networkId key) (mkTxOutValueAdaOnly v) TxOutDatumHashNone
-
-  upperBound :: TxValidityUpperBound era
-  upperBound = case era of
-    ByronEra -> error "byronEra"
-    ShelleyEra -> TxValidityUpperBound ValidityUpperBoundInShelleyEra $ SlotNo maxBound
-    AllegraEra -> TxValidityNoUpperBound ValidityNoUpperBoundInAllegraEra
-    MaryEra    -> TxValidityNoUpperBound ValidityNoUpperBoundInMaryEra
-    AlonzoEra  -> TxValidityNoUpperBound ValidityNoUpperBoundInAlonzoEra
-
-  newFunds txId = zipWith (mkNewFund txId) [TxIx 0 ..] outValues
-
-  mkNewFund :: TxId -> TxIx -> Lovelace -> Fund
-  mkNewFund txId txIx val = Fund $ InAnyCardanoEra era $ FundInEra {
-      _fundTxIn = TxIn txId txIx
-    , _fundVal = mkTxOutValueAdaOnly val
-    , _fundSigningKey = key
-    , _fundValidity = validity
-    }
--}
+limitSteps ::
+     NumberOfTxs
+  -> WalletScript era
+  -> WalletScript era
+limitSteps = undefined

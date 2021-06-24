@@ -1,6 +1,5 @@
 {- HLINT ignore "Reduce duplication" -}
 {- HLINT ignore "Use uncurry" -}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -24,15 +23,23 @@ import           Control.Concurrent (threadDelay)
 import           Control.Tracer (traceWith)
 
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type (SubmitResult (..))
-import           Cardano.Api ( AsType(..), CardanoEra(..), InAnyCardanoEra(..), AnyCardanoEra(..), IsShelleyBasedEra, Tx
+import           Cardano.Api ( AlonzoEra, AsType(..), CardanoEra(..), InAnyCardanoEra(..), AnyCardanoEra(..), IsShelleyBasedEra, Tx
                              , Lovelace, NetworkId(..), cardanoEra
                              , CardanoMode, LocalNodeConnectInfo
                              , PaymentKey
+                             , PlutusScriptVersion(..)
+                             , QueryInMode(..)
+                             , EraInMode(..)
+                             , QueryInEra(..)
+                             , QueryInShelleyBasedEra(..)
+                             , Script(PlutusScript)
+                             , ShelleyBasedEra(..)
                              , SigningKey
                              , TxInMode
                              , TxValidationErrorInMode
                              , getLocalChainTip, queryNodeLocalState, QueryInMode( QueryCurrentEra), ConsensusModeIsMultiEra( CardanoModeIsMultiEra )
                              , chainTipToChainPoint )
+import           Cardano.Api.Shelley ( ProtocolParameters)
 
 import qualified Cardano.Benchmarking.FundSet as FundSet
 import           Cardano.Benchmarking.FundSet (FundInEra(..), Validity(..), Variant(..), liftAnyEra )
@@ -251,6 +258,17 @@ queryEra = do
     Right era -> return era
     Left err -> throwE $ ApiError $ show err
 
+queryProtocolParameters :: ActionM ProtocolParameters
+queryProtocolParameters = do
+  localNodeConnectInfo <- getLocalConnectInfo
+  chainTip  <- liftIO $ getLocalChainTip localNodeConnectInfo
+  ret <- liftIO $ queryNodeLocalState localNodeConnectInfo (Just $ chainTipToChainPoint chainTip)
+                    $ QueryInEra AlonzoEraInCardanoMode $ QueryInShelleyBasedEra ShelleyBasedEraAlonzo QueryProtocolParameters
+  case ret of
+    Right (Right pp) -> return pp
+    Right (Left err) -> throwE $ ApiError $ show err
+    Left err -> throwE $ ApiError $ show err
+
 waitForEra :: AnyCardanoEra -> ActionM ()
 waitForEra era = do
   currentEra <- queryEra
@@ -260,6 +278,19 @@ waitForEra era = do
       traceError $ "Current era: " ++ show currentEra ++ " Waiting for: " ++ show era
       liftIO $ threadDelay 1_000_000
       waitForEra era
+
+localTestWalletScript :: forall era.
+     IsShelleyBasedEra era
+  => WalletScript era
+  -> ActionM ()
+localTestWalletScript s = do
+  step <- liftIO $ runWalletScript s
+  case step of
+    Done -> return ()
+    Error err -> throwE $ ApiError $ show err
+    NextTx nextScript tx -> do
+      void $ localSubmitTx $ txInModeCardano tx
+      localTestWalletScript nextScript
 
 localSubmitTx :: TxInMode CardanoMode -> ActionM (SubmitResult (TxValidationErrorInMode CardanoMode))
 localSubmitTx tx = do
@@ -308,6 +339,41 @@ runBenchmark (ThreadName threadName) txCount tps = do
     Left err -> liftTxGenError err
     Right ctl -> do
       setName (ThreadName threadName) ctl
+  
+runPlutusBenchmark :: ThreadName -> NumberOfTxs -> TPSRate -> ActionM ()
+runPlutusBenchmark (ThreadName threadName) txCount tps = do
+  tracers  <- get BenchTracers
+  targets  <- getUser TTargets
+  networkId@(Testnet networkMagic) <- get NetworkId
+  protocol <- get Protocol
+  protocolParameters <- queryProtocolParameters
+  ioManager <- askIOManager
+  walletRef <- get GlobalWallet
+  fundKey <- getName $ KeyName "pass-partout"
+  (PlutusScript PlutusScriptV1 script) <- liftIO $ PlutusExample.readScript "scripts/plutus/scripts/untyped-always-succeeds-txin.plutus"
+  collateral <- (liftIO $ askWalletRef walletRef (\w -> FundSet.selectCollateral $ walletFunds w)) >>= \case
+    Right c -> return c
+    Left err -> error err
+  let
+    connectClient :: ConnectClient
+    connectClient  = benchmarkConnectTxSubmit
+                       ioManager
+                       (btConnect_ tracers)
+                       (btSubmission_ tracers)
+                       (protocolToCodecConfig protocol)
+                       networkMagic
+    walletScript :: FundSet.Target -> WalletScript AlonzoEra
+    walletScript = plutusWalletScript fundKey script networkId protocolParameters collateral walletRef txCount
+
+--  localTestWalletScript $ walletScript $ FundSet.Target "local"
+
+  ret <- liftIO $ runExceptT $
+           GeneratorTx.walletBenchmark (btTxSubmit_ tracers) (btN2N_ tracers) connectClient
+                                       threadName targets tps LogErrors AsAlonzoEra txCount walletScript
+  case ret of
+    Left err -> liftTxGenError err
+    Right ctl -> do
+      setName (ThreadName threadName) ctl
 
 -- Todo: make it possible to import several funds
 -- (Split init and import)
@@ -349,23 +415,8 @@ initGlobalWallet networkId key ((txIn, outVal), skey) = do
   , _fundVariant = PlainOldFund
   }
 
-{-
-elif [ "$1" == "" ]; then
- plutusscriptinuse=scripts/plutus/scripts/untyped-always-succeeds-txin.plutus
- # This datum hash is the hash of the untyped 42
- scriptdatumhash="9e1199a988ba72ffd6e9c269cadb3b53b5f360ff99f112d9b2ee30c4d74ad88b"
- plutusrequiredspace=70000000
- plutusrequiredtime=70000000
- datumfilepath=scripts/plutus/data/42.datum
- redeemerfilepath=scripts/plutus/data/42.redeemer
- echo "Always succeeds Plutus script in use. Any datum and redeemer combination will succeed."
- echo "Script at: $plutusscriptinuse"
-fi
--}
-
 createChangePlutus :: Lovelace -> Int -> ActionM ()
 createChangePlutus value count = do
-  createChange (value * 35) count -- create some regular change first
   walletRef <- get GlobalWallet
   networkId <- get NetworkId
   fundKey <- getName $ KeyName "pass-partout"
@@ -426,6 +477,12 @@ reserved _ = do
 -}
 reserved :: [String] -> ActionM ()
 reserved _ = do
-  _networkId <- get NetworkId
+  -- create some regular change first
+  -- gensis holds  100000000000000
+  createChange        800000000000 100
+   -- max-tx-size 30 => ca 66 transcaction to create 2000 outputs
+  createChangePlutus   20000000000 2000
+  runPlutusBenchmark (ThreadName "plutusBenchmark") 1000 10
+  waitBenchmark (ThreadName "plutusBenchmark")
   return ()
-  -- wallet <- get GlobalWallet >>= liftIO .
+

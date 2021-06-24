@@ -137,3 +137,15 @@ selectMinValue minValue fs = case coins of
     [] -> Left $ "findSufficientCoin: no single coin with min value >= " ++ show minValue
     (c:_) -> Right [c]
     where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed @>= minValue)
+
+selectPlutusFund :: FundSet -> Either String [Fund]
+selectPlutusFund fs = case coins of
+    [] -> Left $ "no Plutus fund found"
+    (c:_) -> Right [c]
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlutusScriptFund @= IsConfirmed )
+
+selectCollateral :: FundSet -> Either String [Fund]
+selectCollateral fs = case coins of
+    [] -> Left $ "no Plutus fund found"
+    (c:_) -> Right [c]
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed )
