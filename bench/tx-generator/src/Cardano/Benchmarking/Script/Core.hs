@@ -58,7 +58,7 @@ import           Cardano.Benchmarking.OuroborosImports as Core
 import           Cardano.Benchmarking.PlutusExample as PlutusExample
 import           Cardano.Benchmarking.Tracer as Core
                    ( TraceBenchTxSubmit (..)
-                   , createTracers, btTxSubmit_, btN2N_, btConnect_, btSubmission_)
+                   , createTracers, btTxSubmit_, btN2N_, btConnect_, btSubmission2_)
 import           Cardano.Benchmarking.Types as Core (NumberOfTxs(..), SubmissionErrorPolicy(..), TPSRate)
 import           Cardano.Benchmarking.Wallet
 
@@ -203,25 +203,28 @@ waitBenchmarkCore ctl = do
   _ <- liftIO $ runExceptT $ GeneratorTx.waitBenchmark (btTxSubmit_ tracers) ctl
   return ()
 
+getConnectClient :: ActionM ConnectClient
+getConnectClient = do
+  tracers  <- get BenchTracers
+  (Testnet networkMagic) <- get NetworkId
+  protocol <- get Protocol
+  ioManager <- askIOManager
+  return $ benchmarkConnectTxSubmit
+                       ioManager
+                       (btConnect_ tracers)
+                       (btSubmission2_ tracers)
+                       (protocolToCodecConfig protocol)
+                       networkMagic
+  
 -- This the benchmark based on transaction lists.
 -- It is obsolte when the tx-list are replaced with the wallet data type.
 asyncBenchmarkCore :: ThreadName -> TxListName -> TPSRate -> ActionM AsyncBenchmarkControl
 asyncBenchmarkCore (ThreadName threadName) transactions tps = do
   tracers  <- get BenchTracers
-  targets  <- getUser TTargets
   txs      <- getName transactions
-  (Testnet networkMagic) <- get NetworkId
-  protocol <- get Protocol
-  ioManager <- askIOManager
+  targets  <- getUser TTargets
+  connectClient <- getConnectClient
   let
-    connectClient :: ConnectClient
-    connectClient  = benchmarkConnectTxSubmit
-                       ioManager
-                       (btConnect_ tracers)
-                       (btSubmission_ tracers)
-                       (protocolToCodecConfig protocol)
-                       networkMagic
-
     coreCall :: forall era. IsShelleyBasedEra era => [Tx era] -> ExceptT TxGenError IO AsyncBenchmarkControl
     coreCall l = GeneratorTx.asyncBenchmark (btTxSubmit_ tracers) (btN2N_ tracers) connectClient threadName targets tps LogErrors l
   ret <- liftIO $ runExceptT $ case txs of
@@ -310,19 +313,10 @@ runBenchmark :: ThreadName -> NumberOfTxs -> TPSRate -> ActionM ()
 runBenchmark (ThreadName threadName) txCount tps = do
   tracers  <- get BenchTracers
   targets  <- getUser TTargets
-  (Testnet networkMagic) <- get NetworkId
-  protocol <- get Protocol
-  ioManager <- askIOManager
   era <- get $ User TEra
   walletRef <- get GlobalWallet
+  connectClient <-getConnectClient
   let
-    connectClient :: ConnectClient
-    connectClient  = benchmarkConnectTxSubmit
-                       ioManager
-                       (btConnect_ tracers)
-                       (btSubmission_ tracers)
-                       (protocolToCodecConfig protocol)
-                       networkMagic
     walletScript :: forall era. IsShelleyBasedEra era => FundSet.Target -> WalletScript era
     walletScript = benchmarkWalletScript walletRef txCount 2
 
@@ -344,24 +338,16 @@ runPlutusBenchmark :: ThreadName -> NumberOfTxs -> TPSRate -> ActionM ()
 runPlutusBenchmark (ThreadName threadName) txCount tps = do
   tracers  <- get BenchTracers
   targets  <- getUser TTargets
-  networkId@(Testnet networkMagic) <- get NetworkId
-  protocol <- get Protocol
+  networkId <- get NetworkId
   protocolParameters <- queryProtocolParameters
-  ioManager <- askIOManager
   walletRef <- get GlobalWallet
   fundKey <- getName $ KeyName "pass-partout"
   (PlutusScript PlutusScriptV1 script) <- liftIO $ PlutusExample.readScript "scripts/plutus/scripts/untyped-always-succeeds-txin.plutus"
   collateral <- (liftIO $ askWalletRef walletRef (\w -> FundSet.selectCollateral $ walletFunds w)) >>= \case
     Right c -> return c
     Left err -> error err
+  connectClient <- getConnectClient
   let
-    connectClient :: ConnectClient
-    connectClient  = benchmarkConnectTxSubmit
-                       ioManager
-                       (btConnect_ tracers)
-                       (btSubmission_ tracers)
-                       (protocolToCodecConfig protocol)
-                       networkMagic
     walletScript :: FundSet.Target -> WalletScript AlonzoEra
     walletScript = plutusWalletScript fundKey script networkId protocolParameters collateral walletRef txCount
 

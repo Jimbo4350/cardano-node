@@ -51,7 +51,7 @@ import           Ouroboros.Network.Protocol.Trans.Hello.Util (wrapClientPeer)
 
 import           Ouroboros.Network.Snocket (socketSnocket)
 
-import           Cardano.Benchmarking.Tracer (SendRecvConnect, SendRecvTxSubmission)
+import           Cardano.Benchmarking.Tracer (SendRecvConnect, SendRecvTxSubmission2)
 
 type CardanoBlock    = Consensus.CardanoBlock  StandardCrypto
 type ConnectClient = AddrInfo -> TxSubmissionClient (GenTxId CardanoBlock) (GenTx CardanoBlock) IO () -> IO ()
@@ -60,7 +60,7 @@ benchmarkConnectTxSubmit
   :: forall blk. (blk ~ CardanoBlock, RunNode blk )
   => IOManager
   -> Tracer IO SendRecvConnect
-  -> Tracer IO SendRecvTxSubmission
+  -> Tracer IO SendRecvTxSubmission2
   -> CodecConfig CardanoBlock
   -> NetworkMagic
   -> AddrInfo
@@ -69,7 +69,7 @@ benchmarkConnectTxSubmit
   -- ^ the particular txSubmission peer
   -> IO ()
 
-benchmarkConnectTxSubmit ioManager handshakeTracer _submissionTracer codecConfig networkMagic remoteAddr myTxSubClient =
+benchmarkConnectTxSubmit ioManager handshakeTracer submissionTracer codecConfig networkMagic remoteAddr myTxSubClient =
   NtN.connectTo
     (socketSnocket ioManager)
     NetworkConnectTracers {
@@ -113,7 +113,7 @@ benchmarkConnectTxSubmit ioManager handshakeTracer _submissionTracer codecConfig
                                         (kaClient n2nVer them)
           , NtN.txSubmissionProtocol = InitiatorProtocolOnly $
                                          MuxPeer
-                                           (nullTracer) --submissionTracer
+                                           submissionTracer
                                            (cTxSubmission2Codec myCodecs)
                                            (wrapClientPeer $ txSubmissionClientPeer myTxSubClient)
           } )

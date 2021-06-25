@@ -16,7 +16,7 @@ module Cardano.Benchmarking.Tracer
   ( BenchTracers(..)
   , NodeToNodeSubmissionTrace(..)
   , SendRecvConnect
-  , SendRecvTxSubmission
+  , SendRecvTxSubmission2
   , SubmissionSummary(..)
   , TraceBenchTxSubmit(..)
   , TraceLowLevelSubmit(..)
@@ -53,7 +53,7 @@ import           Cardano.Tracing.OrphanInstances.Shelley()
 
 import           Cardano.Benchmarking.OuroborosImports
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
-import           Ouroboros.Network.Protocol.TxSubmission.Type (TxSubmission)
+import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTx, GenTxId)
 import           Ouroboros.Network.NodeToNode (RemoteConnectionId, NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
@@ -65,7 +65,7 @@ data BenchTracers =
   { btBase_       :: Trace  IO Text
   , btTxSubmit_   :: Tracer IO (TraceBenchTxSubmit TxId)
   , btConnect_    :: Tracer IO SendRecvConnect
-  , btSubmission_ :: Tracer IO SendRecvTxSubmission
+  , btSubmission2_:: Tracer IO SendRecvTxSubmission2
   , btLowLevel_   :: Tracer IO TraceLowLevelSubmit
   , btN2N_        :: Tracer IO NodeToNodeSubmissionTrace
   }
@@ -95,8 +95,8 @@ createTracers loggingLayer =
   connectTracer :: Tracer IO SendRecvConnect
   connectTracer = toLogObjectVerbose (appendName "connect" tr')
 
-  submitTracer :: Tracer IO SendRecvTxSubmission
-  submitTracer = toLogObjectVerbose (appendName "submit" tr')
+  submitTracer :: Tracer IO SendRecvTxSubmission2
+  submitTracer = toLogObjectVerbose (appendName "connect" tr')
 
   lowLevelSubmitTracer :: Tracer IO TraceLowLevelSubmit
   lowLevelSubmitTracer = toLogObjectVerbose (appendName "llSubmit" tr')
@@ -249,9 +249,9 @@ instance (MonadIO m) => Transformable Text m TraceLowLevelSubmit where
 {-------------------------------------------------------------------------------
   SendRecvTxSubmission
 -------------------------------------------------------------------------------}
-type SendRecvTxSubmission = TraceSendRecv (TxSubmission (GenTxId CardanoBlock) (GenTx CardanoBlock))
+type SendRecvTxSubmission2 = TraceSendRecv (TxSubmission2 (GenTxId CardanoBlock) (GenTx CardanoBlock))
 
-instance Transformable Text IO SendRecvTxSubmission where
+instance Transformable Text IO SendRecvTxSubmission2 where
   -- transform to JSON Object
   trTransformer verb tr = Tracer $ \arg -> do
     currentTime <- getCurrentTime
