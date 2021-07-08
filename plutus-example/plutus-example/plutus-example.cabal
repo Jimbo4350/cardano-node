@@ -49,7 +49,7 @@ library
                         Cardano.PlutusExample.DatumRedeemerGuess
                         Cardano.PlutusExample.MintingScript
                         Cardano.PlutusExample.CustomDatumRedeemerGuess
-
+                        Cardano.PlutusExample.Sum
   build-depends:        bytestring
                       , cardano-api
                       , plutus-ledger

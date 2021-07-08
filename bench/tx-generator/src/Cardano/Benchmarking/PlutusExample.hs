@@ -106,7 +106,7 @@ spendFromScript key script networkId protocolParameters collateral inFunds valid
     , txValidityRange = (TxValidityNoLowerBound, TxValidityNoUpperBound ValidityNoUpperBoundInAlonzoEra)
     , txMetadata = TxMetadataNone
     , txAuxScripts = TxAuxScriptsNone
-    , txExtraScriptData = BuildTxWith $ TxExtraScriptData ScriptDataInAlonzoEra [ScriptDataNumber 42]
+    , txExtraScriptData = BuildTxWith TxExtraScriptDataNone
     , txExtraKeyWits = TxExtraKeyWitnessesNone
     , txProtocolParams = BuildTxWith $ Just protocolParameters
     , txWithdrawals = TxWithdrawalsNone
@@ -114,7 +114,6 @@ spendFromScript key script networkId protocolParameters collateral inFunds valid
     , txUpdateProposal = TxUpdateProposalNone
     , txMintValue = TxMintNone
     }
-
   requiredMemory = 700000000
   requiredSteps  = 700000000
 
@@ -122,8 +121,8 @@ spendFromScript key script networkId protocolParameters collateral inFunds valid
                           PlutusScriptV1InAlonzo
                           PlutusScriptV1
                           script
-                          (ScriptDatumForTxIn $ ScriptDataNumber 42) -- script date
-                          (ScriptDataNumber 42) -- script redeemer
+                          (ScriptDatumForTxIn $ ScriptDataNumber 3) -- script data
+                          (ScriptDataNumber 6) -- script redeemer
                           (ExecutionUnits requiredSteps requiredMemory)
                           
 
@@ -169,6 +168,7 @@ plutusWalletScript key script networkId protocolParameters collateral wRef (Numb
   makeTransaction w = do
     let newSeqNumber = succ $ walletSeqNumber w
     inputFunds <- selectPlutusFund (walletFunds w)
+--    myCollateral <- selectCollateral (walletFunds w)
     (tx, newFunds) <- spendFromScript key script networkId protocolParameters collateral inputFunds $ InFlight targetNode newSeqNumber
     let
       newWallet = (walletUpdateFunds newFunds inputFunds w) {walletSeqNumber = newSeqNumber}

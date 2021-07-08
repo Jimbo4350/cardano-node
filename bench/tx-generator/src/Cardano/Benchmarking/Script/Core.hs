@@ -342,10 +342,10 @@ runPlutusBenchmark (ThreadName threadName) txCount tps = do
   protocolParameters <- queryProtocolParameters
   walletRef <- get GlobalWallet
   fundKey <- getName $ KeyName "pass-partout"
-  (PlutusScript PlutusScriptV1 script) <- liftIO $ PlutusExample.readScript "scripts/plutus/scripts/untyped-always-succeeds-txin.plutus"
+  (PlutusScript PlutusScriptV1 script) <- liftIO $ PlutusExample.readScript "bench/script/sum1ToN.plutus"
   collateral <- (liftIO $ askWalletRef walletRef (\w -> FundSet.selectCollateral $ walletFunds w)) >>= \case
     Right c -> return c
-    Left err -> error err
+    Left err -> throwE $ WalletError err
   connectClient <- getConnectClient
   let
     walletScript :: FundSet.Target -> WalletScript AlonzoEra
@@ -401,13 +401,14 @@ initGlobalWallet networkId key ((txIn, outVal), skey) = do
   , _fundVariant = PlainOldFund
   }
 
-createChangePlutus :: Lovelace -> Int -> ActionM ()
-createChangePlutus value count = do
+localCreateScriptFunds :: Lovelace -> Int -> ActionM ()
+localCreateScriptFunds value count = do
   walletRef <- get GlobalWallet
   networkId <- get NetworkId
   fundKey <- getName $ KeyName "pass-partout"
-  script <- liftIO $ PlutusExample.readScript "scripts/plutus/scripts/untyped-always-succeeds-txin.plutus"
-  let scriptData = PlutusExample.toScriptHash "9e1199a988ba72ffd6e9c269cadb3b53b5f360ff99f112d9b2ee30c4d74ad88b"
+  let scriptData = PlutusExample.toScriptHash "e88bd757ad5b9bedf372d8d3f0cf6c962a469db61a265f6418e1ffed86da29ec"
+  script <- liftIO $ PlutusExample.readScript "bench/script/sum1ToN.plutus"
+
   let
     createCoins coins = do
       tx <- liftIO $ modifyWalletRefEither walletRef (walletCreateCoins (PlutusExample.payToScript fundKey (script, scriptData) networkId) coins)
@@ -464,10 +465,12 @@ reserved _ = do
 reserved :: [String] -> ActionM ()
 reserved _ = do
   -- create some regular change first
-  -- gensis holds  100000000000000
-  createChange        800000000000 100
+  -- genesis holds  100000000000000
+  createChange            800000000000 100
+  createChange              1492000000 1 -- magic value to tag collateral UTxO
    -- max-tx-size 30 => ca 66 transcaction to create 2000 outputs
-  createChangePlutus   20000000000 2000
+  localCreateScriptFunds   20000000000 2000
+  delay 60
   runPlutusBenchmark (ThreadName "plutusBenchmark") 1000 10
   waitBenchmark (ThreadName "plutusBenchmark")
   return ()

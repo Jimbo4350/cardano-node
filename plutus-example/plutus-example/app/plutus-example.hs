@@ -10,7 +10,7 @@ import           Cardano.PlutusExample.CustomDatumRedeemerGuess
 import           Cardano.PlutusExample.AlwaysSucceeds (alwaysSucceedsScript)
 import           Cardano.PlutusExample.DatumRedeemerGuess (guessScript)
 import           Cardano.PlutusExample.MintingScript (apiExamplePlutusMintingScript)
-
+import           Cardano.PlutusExample.Sum (sumScript)
 
 main :: IO ()
 main = do
@@ -21,4 +21,5 @@ main = do
   _ <- writeFileTextEnvelope (dir </> "guess-42-datum-42-txin.plutus") Nothing guessScript
   _ <- writeFileTextEnvelope (dir </> "custom-guess-42-datum-42.plutus") Nothing customGuessScript
   _ <- writeFileTextEnvelope (dir </> "anyone-can-mint.plutus") Nothing apiExamplePlutusMintingScript
+  _ <- writeFileTextEnvelope (dir </> "sum.plutus") Nothing sumScript
   return ()

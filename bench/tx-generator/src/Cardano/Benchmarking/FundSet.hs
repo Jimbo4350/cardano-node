@@ -146,6 +146,7 @@ selectPlutusFund fs = case coins of
 
 selectCollateral :: FundSet -> Either String [Fund]
 selectCollateral fs = case coins of
-    [] -> Left $ "no Plutus fund found"
-    (c:_) -> Right [c]
-    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed )
+  [] -> Left $ "no matching none-Plutus fund found"
+  (c:_) -> Right [c]
+ where
+  coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed @= (1492000000 :: Lovelace) )
