@@ -61,6 +61,7 @@ library
                         Cardano.Api.Hash
                         Cardano.Api.HasTypeProxy
                         Cardano.Api.IPC
+                        Cardano.Api.IPC.Monad
                         Cardano.Api.Key
                         Cardano.Api.KeysByron
                         Cardano.Api.KeysPraos
