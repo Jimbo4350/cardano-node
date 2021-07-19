@@ -110,7 +110,7 @@ EOF
 
 #####################################################################
 #
-# Run the relay node in the background
+# Run the relay node
 #
 runRelayNode () {
 
@@ -129,7 +129,7 @@ runRelayNode () {
 
 #####################################################################
 #
-# Run the block producer in the background
+# Run the block producer
 #
 runBlockProducerNode () {
 
