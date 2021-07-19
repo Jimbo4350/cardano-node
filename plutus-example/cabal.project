@@ -35,11 +35,12 @@ source-repository-package
     cardano-crypto-tests
     slotting
     strict-containers
+
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-crypto
-  tag: 07397f0e50da97eaa0575d93bee7ac4b2b2576ec
-  --sha256: 06sdx5ndn2g722jhpicmg96vsrys89fl81k8290b3lr6b1b0w4m3
+  tag: f73079303f663e028288f9f4a9e08bcca39a923e
+  --sha256: 1n87i15x54s0cjkh3nsxs4r1x016cdw1fypwmr68936n3xxsjn6q
 
 source-repository-package
   type: git
@@ -66,8 +67,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-prelude
-  tag: fd773f7a58412131512b9f694ab95653ac430852
-  --sha256: 02jddik1yw0222wd6q0vv10f7y8rdgrlqaiy83ph002f9kjx7mh6
+  tag: bb4ed71ba8e587f672d06edf9d2e376f4b055555
+  --sha256: 00h10l5mmiza9819p9v5q5749nb9pzgi20vpzpy1d34zmh6gf1cj
   subdir:
     cardano-prelude
     cardano-prelude-test
@@ -122,8 +123,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 523f349f3d68db07c98150734793ed7003d1f562
-  --sha256: 0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps
+  tag: c5288007b091760631764e860ad3bf7e4933f932
+  --sha256: 13incb43h8vb6vpc97wkzhj1iimisf7vsa6dvm1qgx3kla0b90a1
   subdir:
     plutus-core
     plutus-ledger
