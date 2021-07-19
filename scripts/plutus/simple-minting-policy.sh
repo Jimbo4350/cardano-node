@@ -17,7 +17,7 @@ mkdir -p $work
 # Step 1 - Send ADA to token script owner
 
 export CARDANO_NODE_SOCKET_PATH="${CARDANO_NODE_SOCKET_PATH:-example/node-bft1/node.sock}"
-plutusscriptinuse=plutus-example/example-scripts/minting.plutus
+plutusscriptinuse=plutus-example/example-scripts/anyone-can-mint.plutus
 
 utxovkey=example/shelley/utxo-keys/utxo1.vkey
 utxoskey=example/shelley/utxo-keys/utxo1.skey

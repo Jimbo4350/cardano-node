@@ -469,7 +469,7 @@ echo " * Start the nodes"
 echo " * Initiate successive protocol updates"
 echo " * Query the node's ledger state"
 echo
-echo "To start the nodes, in separate terminals use:"
+echo "To start the nodes, in separate terminals use the following scripts:"
 echo
 
 mkdir -p run
