@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.4"]
+        ghc: ["8.10.5"]
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
@@ -136,7 +136,7 @@ jobs:
         done
 
     - name: Save Artifact
-      if: matrix.ghc == '8.10.4'
+      if: matrix.ghc == '8.10.5'
       uses: actions/upload-artifact@v1
       with:
         name: artifacts-${{ matrix.os }}

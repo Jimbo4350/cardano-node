@@ -12,7 +12,7 @@ You can run all the instructions that invoke `choco` in PowerShell with root pri
 The recommended way is to run the following command in PowerShell:
 
 ```PowerShell
-choco install --version 8.10.4 ghc
+choco install --version 8.10.5 ghc
 ```
 
 ## Install pkg-config

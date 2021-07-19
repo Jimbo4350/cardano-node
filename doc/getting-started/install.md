@@ -27,7 +27,7 @@ To download the source code and build it, you need the following packages and to
 * developer libraries for `ncurses`,
 * `ncurses` compatibility libraries,
 * the Haskell build tool `cabal`,
-* the GHC Haskell compiler (version `8.10.4` or above).
+* the GHC Haskell compiler (version `8.10.5` or above).
 
 In Redhat, Fedora, and Centos:
 
@@ -82,14 +82,14 @@ Create a working directory for your builds:
 
  Download and install the latest version of GHC:
 
-    wget https://downloads.haskell.org/ghc/8.10.4/ghc-8.10.4-x86_64-deb9-linux.tar.xz
-    tar -xf ghc-8.10.4-x86_64-deb9-linux.tar.xz
-    rm ghc-8.10.4-x86_64-deb9-linux.tar.xz
-    cd ghc-8.10.4
+    wget https://downloads.haskell.org/ghc/8.10.5/ghc-8.10.5-x86_64-deb9-linux.tar.xz
+    tar -xf ghc-8.10.5-x86_64-deb9-linux.tar.xz
+    rm ghc-8.10.5-x86_64-deb9-linux.tar.xz
+    cd ghc-8.10.5
     ./configure
     sudo make install
 
-This assumes GHC 8.10.4 on Linux (the most recent version at the time of writing).  If you are installing on MacOSX or Windows, download the compiler from `https://www.haskell.org/platform/mac.html` instead, and follow the installation instructions. Note that using a newer version than the one specified may produce compilation errors.
+This assumes GHC 8.10.5 on Linux (the most recent version at the time of writing).  If you are installing on MacOSX or Windows, download the compiler from `https://www.haskell.org/platform/mac.html` instead, and follow the installation instructions. Note that using a newer version than the one specified may produce compilation errors.
 
 #### Installing Libsodium
 
@@ -139,7 +139,7 @@ Check out the latest version of cardano-node (choose the tag with the highest ve
 
 We explicitly use the GHC version that we installed earlier.  This avoids defaulting to a system version of GHC that might be older than the one you have installed.
 
-    cabal configure --with-compiler=ghc-8.10.4
+    cabal configure --with-compiler=ghc-8.10.5
 
 Note, that for a development build you can avoid installing the custom `libsodium` library and add the following lines to the local project file:
 
