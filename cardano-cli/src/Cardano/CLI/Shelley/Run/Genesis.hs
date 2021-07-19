@@ -1005,8 +1005,8 @@ alonzoGenesisDefaultLovelacePerUtxoWord = Lovelace 1
 alonzoGenesisDefaultExecutionPrices :: ExecutionUnitPrices
 alonzoGenesisDefaultExecutionPrices =
     ExecutionUnitPrices {
-       priceExecutionSteps  = 1,
-       priceExecutionMemory = 1
+       priceExecutionSteps  = 1 % 10,
+       priceExecutionMemory = 1 % 10
     }
 
 alonzoGenesisDefaultMaxTxExecutionUnits :: ExecutionUnits

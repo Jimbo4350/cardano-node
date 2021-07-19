@@ -1,8 +1,9 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
@@ -13,7 +14,7 @@ module Cardano.CLI.Shelley.Run.Transaction
   ) where
 
 import           Cardano.Prelude hiding (All, Any)
-import           Prelude (String)
+import           Prelude (String, error)
 
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Char8 as BS
@@ -23,6 +24,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import           Data.Type.Equality (TestEquality (..))
 
+import           Control.Concurrent.STM
 import           Control.Monad.Trans.Except.Extra (firstExceptT, handleIOExceptT, hoistEither,
                    hoistMaybe, left, newExceptT)
 
@@ -38,22 +40,29 @@ import qualified Cardano.Binary as CBOR
 import           Cardano.Ledger.ShelleyMA.TxBody ()
 import           Shelley.Spec.Ledger.Scripts ()
 
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import           Ouroboros.Consensus.Cardano.Block (EraMismatch (..))
-import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Client as Net.Tx
-
 import           Cardano.CLI.Environment (EnvSocketError, readEnvSocketPath, renderEnvSocketError)
 import           Cardano.CLI.Run.Friendly (friendlyTxBodyBS)
 import           Cardano.CLI.Shelley.Key (InputDecodeError, readSigningKeyFileAnyOf)
 import           Cardano.CLI.Shelley.Parsers
 import           Cardano.CLI.Shelley.Run.Genesis (ShelleyGenesisCmdError (..), readShelleyGenesis,
                    renderShelleyGenesisCmdError)
+import           Cardano.CLI.Shelley.Run.Query (ShelleyQueryCmdLocalStateQueryError (..),
+                   renderLocalStateQueryError)
 import           Cardano.CLI.Shelley.Script
 import           Cardano.CLI.Types
+import           Ouroboros.Consensus.BlockchainTime.WallClock.Types (SystemStart (..))
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import           Ouroboros.Consensus.Cardano.Block (EraMismatch (..))
+import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Client as Net.Query
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..))
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as Net.Query
+import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Client as Net.Tx
 
 import qualified System.IO as IO
+
+{- HLINT ignore "Use let" -}
 
 data ShelleyTxCmdError
   = ShelleyTxCmdAesonDecodeProtocolParamsError !FilePath !Text
@@ -70,9 +79,9 @@ data ShelleyTxCmdError
   | ShelleyTxCmdMetadataJsonParseError !FilePath !String
   | ShelleyTxCmdMetadataConversionError !FilePath !TxMetadataJsonError
   | ShelleyTxCmdMetaValidationError !FilePath ![(Word64, TxMetadataRangeError)]
-  | ShelleyTxCmdScriptDataJsonParseError  FilePath String
-  | ShelleyTxCmdScriptDataConversionError FilePath ScriptDataJsonError
-  | ShelleyTxCmdScriptDataValidationError FilePath ScriptDataRangeError
+  | ShelleyTxCmdScriptDataJsonParseError  !FilePath !String
+  | ShelleyTxCmdScriptDataConversionError !FilePath !ScriptDataJsonError
+  | ShelleyTxCmdScriptDataValidationError !FilePath !ScriptDataRangeError
   | ShelleyTxCmdMetaDecodeError !FilePath !CBOR.DecoderError
   | ShelleyTxCmdBootstrapWitnessError !ShelleyBootstrapWitnessError
   | ShelleyTxCmdSocketEnvError !EnvSocketError
@@ -82,22 +91,30 @@ data ShelleyTxCmdError
   | ShelleyTxCmdTxSubmitErrorAllegra !(ApplyTxErr (ShelleyBlock StandardAllegra))
   | ShelleyTxCmdTxSubmitErrorMary !(ApplyTxErr (ShelleyBlock StandardMary))
   | ShelleyTxCmdTxSubmitErrorEraMismatch !EraMismatch
-  | ShelleyTxCmdTxFeatureMismatch AnyCardanoEra TxFeature
-  | ShelleyTxCmdTxBodyError SomeTxBodyError
-  | ShelleyTxCmdNotImplemented Text
-  | ShelleyTxCmdWitnessEraMismatch AnyCardanoEra AnyCardanoEra WitnessFile
-  | ShelleyTxCmdScriptLanguageNotSupportedInEra AnyScriptLanguage AnyCardanoEra
-  | ShelleyTxCmdScriptExpectedSimple FilePath AnyScriptLanguage
-  | ShelleyTxCmdScriptExpectedPlutus FilePath AnyScriptLanguage
+  | ShelleyTxCmdTxFeatureMismatch !AnyCardanoEra !TxFeature
+  | ShelleyTxCmdTxBodyError !TxBodyError
+  | ShelleyTxCmdNotImplemented !Text
+  | ShelleyTxCmdWitnessEraMismatch !AnyCardanoEra !AnyCardanoEra !WitnessFile
+  | ShelleyTxCmdScriptLanguageNotSupportedInEra !AnyScriptLanguage !AnyCardanoEra
+  | ShelleyTxCmdScriptExpectedSimple !FilePath !AnyScriptLanguage
+  | ShelleyTxCmdScriptExpectedPlutus !FilePath !AnyScriptLanguage
   | ShelleyTxCmdGenesisCmdError !ShelleyGenesisCmdError
-  | ShelleyTxCmdPolicyIdsMissing [PolicyId]
-  | ShelleyTxCmdPolicyIdsExcess  [PolicyId]
+  | ShelleyTxCmdPolicyIdsMissing ![PolicyId]
+  | ShelleyTxCmdPolicyIdsExcess  ![PolicyId]
+  | ShelleyTxCmdAcquireFailure !AcquireFailure
+  | ShelleyTxCmdUnsupportedMode !AnyConsensusMode
+  | ShelleyTxCmdByronEra
+  | ShelleyTxCmdEraConsensusModeMismatchTxBalance
+      !TxBodyFile
+      !AnyConsensusMode
+      !AnyCardanoEra
+  | ShelleyTxCmdBalanceTxBody !TxBodyErrorAutoBalance
+  | ShelleyTxCmdEraConsensusModeMismatchQuery !AnyConsensusMode !AnyCardanoEra
+  | ShelleyTxCmdByronEraQuery
+  | ShelleyTxCmdLocalStateQueryError !ShelleyQueryCmdLocalStateQueryError
+
   deriving Show
 
-data SomeTxBodyError where
-     SomeTxBodyError :: TxBodyError era -> SomeTxBodyError
-
-deriving instance Show SomeTxBodyError
 
 renderShelleyTxCmdError :: ShelleyTxCmdError -> Text
 renderShelleyTxCmdError err =
@@ -165,8 +182,7 @@ renderShelleyTxCmdError err =
       renderFeature feature <> " cannot be used for " <> renderEra era <>
       " era transactions."
 
-    ShelleyTxCmdTxBodyError (SomeTxBodyError err') ->
-      "Transaction validaton error: " <> Text.pack (displayError err')
+    ShelleyTxCmdTxBodyError err' -> Text.pack (displayError err')
 
     ShelleyTxCmdNotImplemented msg ->
       "Feature not yet implemented: " <> msg
@@ -204,6 +220,18 @@ renderShelleyTxCmdError err =
       "A script provided to witness minting does not correspond to the policy \
       \id of any asset specified in the \"--mint\" field. The script hash is: "
       <> Text.intercalate ", " (map serialiseToRawBytesHexText policyids)
+    ShelleyTxCmdAcquireFailure acquireFail -> Text.pack $ show acquireFail
+    ShelleyTxCmdUnsupportedMode mode -> "Unsupported mode: " <> renderMode mode
+    ShelleyTxCmdByronEra -> "This query cannot be used for the Byron era"
+    ShelleyTxCmdEraConsensusModeMismatchTxBalance fp mode era ->
+       "Cannot balance " <> renderEra era <> " era transaction body (" <> show fp <>
+       ") because is not supported in the " <> renderMode mode <> " consensus mode."
+    ShelleyTxCmdEraConsensusModeMismatchQuery (AnyConsensusMode cMode) (AnyCardanoEra era) ->
+      "Consensus mode and era mismatch. Consensus mode: " <> show cMode <>
+      " Era: " <> show era
+    ShelleyTxCmdByronEraQuery -> "Query not available in Byron era"
+    ShelleyTxCmdLocalStateQueryError err' -> renderLocalStateQueryError err'
+    ShelleyTxCmdBalanceTxBody err' -> Text.pack $ displayError err'
 
 renderEra :: AnyCardanoEra -> Text
 renderEra (AnyCardanoEra ByronEra)   = "Byron"
@@ -234,6 +262,12 @@ renderFeature TxFeatureTxOutDatum           = "Transaction output datums"
 runTransactionCmd :: TransactionCmd -> ExceptT ShelleyTxCmdError IO ()
 runTransactionCmd cmd =
   case cmd of
+    TxBuild era consensusModeParams nid txins txinsc txouts changeAddr mValue mLowBound
+            mUpperBound certs wdrls metadataSchema scriptFiles
+            metadataFiles mpparams mUpProp out ->
+      runTxBuild era consensusModeParams nid txins txinsc txouts changeAddr mValue mLowBound
+                 mUpperBound certs wdrls metadataSchema scriptFiles
+                 metadataFiles mpparams mUpProp out
     TxBuildRaw era txins txinsc txouts mValue mLowBound mUpperBound
                fee certs wdrls metadataSchema scriptFiles
                metadataFiles mpparams mUpProp out ->
@@ -315,11 +349,148 @@ runTxBuildRaw (AnyCardanoEra era)
         <*> validateTxMintValue      era mValue
 
     txBody <-
-      firstExceptT (ShelleyTxCmdTxBodyError . SomeTxBodyError) . hoistEither $
+      firstExceptT ShelleyTxCmdTxBodyError . hoistEither $
         makeTransactionBody txBodyContent
-
+    liftIO $ print txBody
     firstExceptT ShelleyTxCmdWriteFileError . newExceptT $
       writeFileTextEnvelope fpath Nothing txBody
+
+runTxBuild
+  :: AnyCardanoEra
+  -> AnyConsensusModeParams
+  -> NetworkId
+  -> [(TxIn, Maybe (ScriptWitnessFiles WitCtxTxIn))]
+  -- ^ TxIn with potential script witness
+  -> [TxIn]
+  -- ^ TxIn for collateral
+  -> [TxOutAnyEra]
+  -- ^ Normal outputs
+  -> TxOutChangeAddress
+  -- ^ A change output
+  -> Maybe (Value, [ScriptWitnessFiles WitCtxMint])
+  -- ^ Multi-Asset value(s)
+  -> Maybe SlotNo
+  -- ^ Tx lower bound
+  -> Maybe SlotNo
+  -- ^ Tx upper bound
+  -> [(CertificateFile, Maybe (ScriptWitnessFiles WitCtxStake))]
+  -- ^ Certificate with potential script witness
+  -> [(StakeAddress, Lovelace, Maybe (ScriptWitnessFiles WitCtxStake))]
+  -> TxMetadataJsonSchema
+  -> [ScriptFile]
+  -> [MetadataFile]
+  -> Maybe ProtocolParamsSourceSpec
+  -> Maybe UpdateProposalFile
+  -> TxBodyFile
+  -> ExceptT ShelleyTxCmdError IO ()
+runTxBuild (AnyCardanoEra era) (AnyConsensusModeParams cModeParams) networkId txins txinsc txouts
+           (TxOutChangeAddress changeAddr) mValue mLowerBound mUpperBound certFiles withdrawals
+           metadataSchema scriptFiles metadataFiles mpparams mUpdatePropFile outBody@(TxBodyFile fpath) = do
+  SocketPath sockPath <- firstExceptT ShelleyTxCmdSocketEnvError readEnvSocketPath
+
+  let localNodeConnInfo = LocalNodeConnectInfo cModeParams networkId sockPath
+      consensusMode = consensusModeOnly cModeParams
+      dummyFee = Just $ Lovelace 0
+      onlyInputs = [input | (input,_) <- txins]
+  case consensusMode of
+    CardanoMode -> do
+      txBodyContent <-
+        TxBodyContent
+          <$> validateTxIns               era txins
+          <*> validateTxInsCollateral     era txinsc
+          <*> validateTxOuts              era txouts
+          <*> validateTxFee               era dummyFee
+          <*> ((,) <$> validateTxValidityLowerBound era mLowerBound
+                   <*> validateTxValidityUpperBound era mUpperBound)
+          <*> validateTxMetadataInEra     era metadataSchema metadataFiles
+          <*> validateTxAuxScripts        era scriptFiles
+          <*> pure (BuildTxWith TxExtraScriptDataNone) --TODO alonzo: support this
+          <*> pure TxExtraKeyWitnessesNone --TODO alonzo: support this
+          <*> validateProtocolParameters  era mpparams
+          <*> validateTxWithdrawals       era withdrawals
+          <*> validateTxCertificates      era certFiles
+          <*> validateTxUpdateProposal    era mUpdatePropFile
+          <*> validateTxMintValue         era mValue
+
+      -- TODO: Combine queries
+      let localConnInfo = LocalNodeConnectInfo
+                            { localConsensusModeParams = CardanoModeParams (EpochSlots 21600)
+                            , localNodeNetworkId       = networkId
+                            , localNodeSocketPath      = sockPath
+                            }
+
+      sbe <- getSbe $ cardanoEraStyle era
+      eInMode <- case toEraInMode era CardanoMode of
+                   Just result -> return result
+                   Nothing ->
+                     left (ShelleyTxCmdEraConsensusModeMismatchTxBalance outBody
+                            (AnyConsensusMode CardanoMode) (AnyCardanoEra era))
+
+      let utxoQuery = QueryInEra eInMode $ QueryInShelleyBasedEra sbe
+                        (QueryUTxO . QueryUTxOByTxIn $ Set.fromList onlyInputs)
+      let pParamsQuery = QueryInEra eInMode $ QueryInShelleyBasedEra sbe QueryProtocolParameters
+      utxo <- executeQuery era cModeParams localConnInfo utxoQuery
+      pparams <- executeQuery era cModeParams localConnInfo pParamsQuery
+      (eraHistory, systemStart) <- firstExceptT ShelleyTxCmdAcquireFailure
+                                     $ newExceptT $ queryEraHistoryAndSystemStart localNodeConnInfo Nothing
+
+      let cAddr = case anyAddressInEra (shelleyBasedToCardanoEra sbe) changeAddr of
+                    Just addr -> addr
+                    Nothing -> error $ "runTxBuild: Byron address used: " <> show changeAddr
+
+      balancedTxBody <-
+        firstExceptT ShelleyTxCmdBalanceTxBody
+          . hoistEither
+          $ makeTransactionBodyAutoBalance sbe eInMode systemStart eraHistory
+                                           pparams Set.empty utxo txBodyContent
+                                           cAddr Nothing
+
+      firstExceptT ShelleyTxCmdWriteFileError . newExceptT
+        $ writeFileTextEnvelope fpath Nothing balancedTxBody
+
+    wrongMode -> left (ShelleyTxCmdUnsupportedMode (AnyConsensusMode wrongMode))
+
+
+queryEraHistoryAndSystemStart
+  :: LocalNodeConnectInfo CardanoMode
+  -> Maybe ChainPoint
+  -> IO (Either Net.Query.AcquireFailure (EraHistory CardanoMode, SystemStart))
+queryEraHistoryAndSystemStart connctInfo mpoint = do
+    resultVar <- newEmptyTMVarIO
+    connectToLocalNode
+      connctInfo
+      LocalNodeClientProtocols
+      { localChainSyncClient    = NoLocalChainSyncClient
+      , localStateQueryClient   = Just (singleQuery mpoint resultVar)
+      , localTxSubmissionClient = Nothing
+      }
+    atomically (takeTMVar resultVar)
+  where
+    singleQuery
+      :: Maybe ChainPoint
+      -> TMVar (Either Net.Query.AcquireFailure (EraHistory CardanoMode, SystemStart))
+      -> Net.Query.LocalStateQueryClient (BlockInMode CardanoMode) ChainPoint
+                                         (QueryInMode CardanoMode) IO ()
+    singleQuery mPointVar' resultVar' =
+      LocalStateQueryClient $ do
+      pure . Net.Query.SendMsgAcquire mPointVar' $
+        Net.Query.ClientStAcquiring
+        { Net.Query.recvMsgAcquired =
+          pure $ Net.Query.SendMsgQuery (QueryEraHistory CardanoModeIsMultiEra) $
+            Net.Query.ClientStQuerying
+            { Net.Query.recvMsgResult = \result1 -> do
+              pure $ Net.Query.SendMsgQuery QuerySystemStart $
+                Net.Query.ClientStQuerying
+                { Net.Query.recvMsgResult = \result2 -> do
+                  atomically $ putTMVar resultVar' (Right (result1, result2))
+
+                  pure $ Net.Query.SendMsgRelease $ pure $ Net.Query.SendMsgDone ()
+                }
+            }
+        , Net.Query.recvMsgFailure = \failure -> do
+            atomically $ putTMVar resultVar' (Left failure)
+            pure $ Net.Query.SendMsgDone ()
+        }
 
 -- ----------------------------------------------------------------------------
 -- Transaction body validation and conversion
@@ -1243,3 +1414,45 @@ readFileTxMetadata _ (MetadataFileCBOR fp) = do
     firstExceptT (ShelleyTxCmdMetaValidationError fp) $ hoistEither $ do
         validateTxMetadata txMetadata
         return txMetadata
+
+executeQuery
+  :: forall result era mode. CardanoEra era
+  -> ConsensusModeParams mode
+  -> LocalNodeConnectInfo mode
+  -> QueryInMode mode (Either EraMismatch result)
+  -> ExceptT ShelleyTxCmdError IO result
+executeQuery era cModeP localNodeConnInfo q = do
+  eraInMode <- calcEraInMode era $ consensusModeOnly cModeP
+  case eraInMode of
+    ByronEraInByronMode -> left ShelleyTxCmdByronEraQuery
+    _ -> liftIO execQuery >>= queryResult
+ where
+   execQuery :: IO (Either AcquireFailure (Either EraMismatch result))
+   execQuery = queryNodeLocalState localNodeConnInfo Nothing q
+
+
+queryResult
+  :: Either AcquireFailure (Either EraMismatch a)
+  -> ExceptT ShelleyTxCmdError IO a
+queryResult eAcq =
+  case eAcq of
+    Left acqFailure -> left $ ShelleyTxCmdAcquireFailure acqFailure
+    Right eResult ->
+      case eResult of
+        Left err -> left . ShelleyTxCmdLocalStateQueryError $ EraMismatchError err
+        Right result -> return result
+
+calcEraInMode
+  :: CardanoEra era
+  -> ConsensusMode mode
+  -> ExceptT ShelleyTxCmdError IO (EraInMode era mode)
+calcEraInMode era mode=
+  hoistMaybe (ShelleyTxCmdEraConsensusModeMismatchQuery (AnyConsensusMode mode) (anyCardanoEra era))
+                   $ toEraInMode era mode
+
+getSbe :: CardanoEraStyle era
+       -> ExceptT ShelleyTxCmdError IO (ShelleyBasedEra era)
+getSbe LegacyByronEra = left ShelleyTxCmdByronEra
+getSbe (ShelleyBasedEra sbe) = return sbe
+
+

@@ -1,3 +1,4 @@
+
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
@@ -5,7 +6,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Cardano.CLI.Types
-  ( CBORObject (..)
+  ( BalanceTxExecUnits (..)
+  , CBORObject (..)
   , CertificateFile (..)
   , GenesisFile (..)
   , OutputFormat (..)
@@ -18,6 +20,7 @@ module Cardano.CLI.Types
   , ScriptDatumOrFile (..)
   , TransferDirection(..)
   , TxOutAnyEra (..)
+  , TxOutChangeAddress (..)
   , UpdateProposalFile (..)
   , VerificationKeyFile (..)
   , Stakes (..)
@@ -191,4 +194,19 @@ data TxOutAnyEra = TxOutAnyEra
                      Value
                      (Maybe (Hash ScriptData))
   deriving (Eq, Show)
+
+-- | A partially-specified transaction output indented to use as a change
+-- output.
+--
+-- It does not specify a value, since this will be worked out automatically.
+--
+-- It does not use any script data hash, since that's generally not used for
+-- change outputs.
+--
+newtype TxOutChangeAddress = TxOutChangeAddress AddressAny
+  deriving (Eq, Show)
+
+-- A flag that differentiates between automatically
+-- and manually balancing a tx.
+data BalanceTxExecUnits = AutoBalance | ManualBalance
 

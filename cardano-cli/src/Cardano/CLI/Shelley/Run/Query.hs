@@ -13,9 +13,12 @@
 
 module Cardano.CLI.Shelley.Run.Query
   ( ShelleyQueryCmdError
+  , ShelleyQueryCmdLocalStateQueryError (..)
   , renderShelleyQueryCmdError
+  , renderLocalStateQueryError
   , runQueryCmd
   , percentage
+  , executeQuery
   ) where
 
 import           Cardano.Prelude hiding (atomically)
@@ -44,8 +47,7 @@ import           Cardano.Api.Byron
 import           Cardano.Api.Shelley
 
 import           Cardano.CLI.Environment (EnvSocketError, readEnvSocketPath, renderEnvSocketError)
-import           Cardano.CLI.Helpers (HelpersError (..), pPrintCBOR, renderHelpersError, hushM)
-import           Cardano.CLI.Mary.RenderValue (defaultRenderValueOptions, renderValue)
+import           Cardano.CLI.Helpers (HelpersError (..), hushM, pPrintCBOR, renderHelpersError)
 import           Cardano.CLI.Shelley.Orphans ()
 import qualified Cardano.CLI.Shelley.Output as O
 import           Cardano.CLI.Shelley.Parsers (OutputFile (..), QueryCmd (..))
@@ -103,7 +105,7 @@ renderShelleyQueryCmdError err =
     ShelleyQueryCmdLocalStateQueryError lsqErr -> renderLocalStateQueryError lsqErr
     ShelleyQueryCmdWriteFileError fileErr -> Text.pack (displayError fileErr)
     ShelleyQueryCmdHelpersError helpersErr -> renderHelpersError helpersErr
-    ShelleyQueryCmdAcquireFailure aqFail -> Text.pack $ show aqFail
+    ShelleyQueryCmdAcquireFailure acquireFail -> Text.pack $ show acquireFail
     ShelleyQueryCmdByronEra -> "This query cannot be used for the Byron era"
     ShelleyQueryCmdPoolIdError poolId -> "The pool id does not exist: " <> show poolId
     ShelleyQueryCmdEraConsensusModeMismatch (AnyConsensusMode cMode) (AnyCardanoEra era) ->
@@ -697,7 +699,7 @@ printUtxo shelleyBasedEra' txInOutTuple =
     in Text.pack $ replicate (max 1 (len - slen)) ' ' ++ str
 
   printableValue :: TxOutValue era -> Text
-  printableValue (TxOutValue _ val) = renderValue defaultRenderValueOptions val
+  printableValue (TxOutValue _ val) = renderValue val
   printableValue (TxOutAdaOnly _ (Lovelace i)) = Text.pack $ show i
 
 
