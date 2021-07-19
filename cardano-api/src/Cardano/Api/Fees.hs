@@ -13,8 +13,6 @@
 -- | Fee calculation
 --
 module Cardano.Api.Fees (
-
-    -- * Transaction fees
     transactionFee,
     estimateTransactionFee,
     evaluateTransactionFee,
@@ -35,47 +33,48 @@ module Cardano.Api.Fees (
 
 import           Prelude
 
-import           Data.Maybe (fromMaybe)
-import qualified Data.ByteString as BS
-import           Data.Bifunctor (bimap, first)
 import qualified Data.Array as Array
+import           Data.Bifunctor (bimap, first)
+import qualified Data.ByteString as BS
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
+import           Data.Sequence.Strict (StrictSeq (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import           Data.Map (Map)
-import qualified Data.Map as Map
 import           GHC.Records (HasField (..))
 import           Numeric.Natural
-import           Data.Sequence.Strict (StrictSeq(..))
 
+import           Control.Monad.Trans.Except
 import qualified Data.Text.Prettyprint.Doc as PP
 import qualified Data.Text.Prettyprint.Doc.Render.String as PP
-import           Control.Monad.Trans.Except
 
 import qualified Cardano.Binary as CBOR
 import           Cardano.Slotting.EpochInfo (EpochInfo, hoistEpochInfo)
 
 import qualified Cardano.Chain.Common as Byron
 
+import qualified Cardano.Ledger.Alonzo.Tools as Alonzo
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Coin as Ledger
 import qualified Cardano.Ledger.Core as Ledger
-import qualified Cardano.Ledger.Era  as Ledger.Era (Crypto)
-import qualified Cardano.Ledger.Keys as Ledger
 import qualified Cardano.Ledger.Crypto as Ledger
-import qualified Shelley.Spec.Ledger.API as Ledger (CLI, TxIn, DCert, Wdrl)
-import qualified Shelley.Spec.Ledger.API.Wallet as Ledger
-                   (evaluateTransactionBalance, evaluateTransactionFee)
+import qualified Cardano.Ledger.Era as Ledger.Era (Crypto)
+import qualified Cardano.Ledger.Keys as Ledger
+import qualified Shelley.Spec.Ledger.API as Ledger (CLI, DCert, TxIn, Wdrl)
+import qualified Shelley.Spec.Ledger.API.Wallet as Ledger (evaluateTransactionBalance,
+                   evaluateTransactionFee)
 
-import           Shelley.Spec.Ledger.PParams (PParams'(..))
+import           Shelley.Spec.Ledger.PParams (PParams' (..))
 
 import qualified Cardano.Ledger.Mary.Value as Mary
 
-import           Cardano.Ledger.Alonzo.PParams (PParams'(..))
 import qualified Cardano.Ledger.Alonzo as Alonzo
 import qualified Cardano.Ledger.Alonzo.Language as Alonzo
+import           Cardano.Ledger.Alonzo.PParams (PParams' (..))
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
-import qualified Cardano.Ledger.Alonzo.Tools as Alonzo
 
 import qualified Plutus.V1.Ledger.Api as Plutus
 
@@ -90,7 +89,7 @@ import           Cardano.Api.NetworkId
 import           Cardano.Api.ProtocolParameters
 import           Cardano.Api.Query
 import           Cardano.Api.Script
-import           Cardano.Api.Tx
+import           Cardano.Api.Tx (Tx (ByronTx, ShelleyTx), makeSignedTransaction)
 import           Cardano.Api.TxBody
 import           Cardano.Api.Value
 
@@ -210,8 +209,7 @@ evaluateTransactionFee :: forall era.
                        -> Word  -- ^ The number of Byron key witnesses
                        -> Lovelace
 evaluateTransactionFee _ _ _ byronwitcount | byronwitcount > 0 =
-  error "evaluateTransactionFee: TODO support Byron key witnesses"
-
+    error "evaluateTransactionFee: TODO support Byron key witnesses"
 evaluateTransactionFee pparams txbody keywitcount _byronwitcount =
     case makeSignedTransaction [] txbody of
       ByronTx{} -> case shelleyBasedEra :: ShelleyBasedEra era of {}
@@ -326,7 +324,7 @@ data ScriptExecutionError =
 
        -- | The script evaluation failed. This usually means it evaluated to an
        -- error value. This is not a case of running out of execution units
-       -- (which is not possible for 'evaluateTransactionExecutionUnits' since 
+       -- (which is not possible for 'evaluateTransactionExecutionUnits' since
        -- the whole point of it is to discover how many execution units are
        -- needed).
        --
@@ -410,11 +408,9 @@ instance Error TransactionValidityIntervalError where
         = 0 -- This should be impossible.
 
 
-
--- | Compute the 'ExecutionUnits' needed for each script in the transaction.
---
--- This works by running all the scripts and counting how many execution units
--- are actually used.
+-- | Run all the scripts in a transaction and return the execution units needed
+-- for each use of each script. The total execution units for the transaction
+-- is the sum of these.
 --
 evaluateTransactionExecutionUnits
   :: forall era mode.
@@ -519,20 +515,20 @@ evaluateTransactionExecutionUnits _eraInMode systemstart history pparams utxo tx
 -- Finding the (non-zero) balance of partially constructed transaction is
 -- useful for adjusting a transaction to be fully balanced.
 --
-evaluateTransactionBalance :: forall era.
-                              IsShelleyBasedEra era
-                           => ProtocolParameters
+evaluateTransactionBalance :: forall era. Ledger.CLI (ShelleyLedgerEra era)
+                           => ShelleyBasedEra era
+                           -> ProtocolParameters
                            -> Set PoolId
                            -> UTxO era
                            -> TxBody era
                            -> TxOutValue era
-evaluateTransactionBalance _ _ _ (ByronTxBody _) =
-    case shelleyBasedEra :: ShelleyBasedEra era of {}
+evaluateTransactionBalance sbe _ _ _ (ByronTxBody _) =
+    case sbe :: ShelleyBasedEra era of {}
     --TODO: we could actually support Byron here, it'd be different but simpler
 
-evaluateTransactionBalance pparams poolids utxo
+evaluateTransactionBalance sbe pparams poolids utxo
                            (ShelleyTxBody era txbody _ _ _) =
-    withLedgerConstraints era evalAdaOnly evalMultiAsset
+    withLedgerConstraints sbe evalAdaOnly evalMultiAsset
   where
     isNewPool :: Ledger.KeyHash Ledger.StakePool Ledger.StandardCrypto -> Bool
     isNewPool kh = StakePoolKeyHash kh `Set.notMember` poolids
@@ -622,10 +618,10 @@ type LedgerTxBodyConstraints ledgerera =
 
 -- | The possible errors that can arise from 'makeTransactionBodyAutoBalance'.
 --
-data TxBodyErrorAutoBalance era =
+data TxBodyErrorAutoBalance =
 
        -- | The same errors that can arise from 'makeTransactionBody'.
-       TxBodyError (TxBodyError era)
+       TxBodyError TxBodyError
 
        -- | One or more of the scripts fails to execute correctly.
      | TxBodyScriptExecutionError [(ScriptWitnessIndex, ScriptExecutionError)]
@@ -639,7 +635,13 @@ data TxBodyErrorAutoBalance era =
        -- The transaction should be changed to provide more input ada, or
        -- otherwise adjusted to need less (e.g. outputs, script etc).
        --
-     | TxBodyErrorAdaBalanceNegative Lovelace
+     | TxBodyErrorAdaBalanceNegative
+         Lovelace
+         -- ^ Transaction balance.
+         Lovelace
+         -- ^ Calculated Tx Fee.
+         AnyUTxO
+         -- ^ UTxO used in balance calculation.
 
        -- | There is enough ada to cover both the outputs and the fees, but the
        -- resulting change is too small: it is under the minimum value for
@@ -662,15 +664,23 @@ data TxBodyErrorAutoBalance era =
        -- The transaction validity interval is too far into the future.
        -- See 'TransactionValidityIntervalError' for details.
      | TxBodyErrorValidityInterval TransactionValidityIntervalError
+     | TxBodyErrorFeeTooSmall
+         Lovelace
+         -- ^ Total calculated tx fee.
+         Lovelace
+         -- ^ Cost of execution units.
+         Lovelace
+         -- ^ Estimated tx fee (excluding execution units cost).
+     | TxBodyErrorProtocolParameterPricingMissing
   deriving Show
 
 
-instance Error (TxBodyErrorAutoBalance era) where
+instance Error TxBodyErrorAutoBalance where
   displayError (TxBodyError err) = displayError err
 
   displayError (TxBodyScriptExecutionError failures) =
       "The following scripts have execution failures:\n"
-   ++ unlines [ "the script for " ++ renderScriptWitnessIndex index
+   ++ unlines [ "the script for " ++ Text.unpack (renderScriptWitnessIndex index)
                 ++ " failed with " ++ displayError failure
               | (index, failure) <- failures ]
 
@@ -681,10 +691,12 @@ instance Error (TxBodyErrorAutoBalance era) where
    ++ "TODO: move the Value renderer and parser from the CLI into the API and use them here"
    -- TODO: do this ^^
 
-  displayError (TxBodyErrorAdaBalanceNegative lovelace) =
+  displayError (TxBodyErrorAdaBalanceNegative balance totFee utxo) =
       "The transaction does not balance in its use of ada. The net balance "
-   ++ "of the transaction is negative: " ++ show lovelace ++ " lovelace. "
+   ++ "of the transaction is negative: " ++ show balance ++ " lovelace. "
    ++ "The usual solution is to provide more inputs, or inputs with more ada."
+   ++ "\n Calculated fee: " ++ show totFee
+   ++ "\n UTxO: \n" ++ Text.unpack (renderUTxO utxo)
 
   displayError (TxBodyErrorAdaBalanceTooSmall lovelace) =
       "The transaction does balance in its use of ada, however the net "
@@ -703,7 +715,13 @@ instance Error (TxBodyErrorAutoBalance era) where
 
   displayError (TxBodyErrorValidityInterval err) =
       displayError err
-
+  displayError (TxBodyErrorFeeTooSmall totFee eUnitsCost estFee) =
+      "The total fee is less than the cost of the execution units and "
+   ++ "the estimated tx fee. "
+   ++ "\n Total fee: " ++ show totFee
+   ++ "\n Execution units cost: " ++ show eUnitsCost
+   ++ "\n Estimated fee: " ++ show estFee
+  displayError TxBodyErrorProtocolParameterPricingMissing = "TODO: Pricing parameter missing"
 
 -- | This is much like 'makeTransactionBody' but with greater automation to
 -- calculate suitable values for several things.
@@ -727,10 +745,10 @@ instance Error (TxBodyErrorAutoBalance era) where
 -- To do this it needs more information than 'makeTransactionBody', all of
 -- which can be queried from a local node.
 --
+
 makeTransactionBodyAutoBalance
-  :: forall era mode.
-     IsShelleyBasedEra era
-  => EraInMode era mode
+  :: ShelleyBasedEra era
+  -> EraInMode era mode
   -> SystemStart
   -> EraHistory mode
   -> ProtocolParameters
@@ -739,9 +757,9 @@ makeTransactionBodyAutoBalance
   -> TxBodyContent BuildTx era
   -> AddressInEra era -- ^ Change address
   -> Maybe Word       -- ^ Override key witnesses
-  -> Either (TxBodyErrorAutoBalance era)
+  -> Either TxBodyErrorAutoBalance
             (TxBody era)
-makeTransactionBodyAutoBalance eraInMode systemstart history pparams
+makeTransactionBodyAutoBalance sbe eraInMode systemstart history pparams
                             poolids utxo txbodycontent changeaddr mnkeys = do
 
     -- Our strategy is to:
@@ -751,7 +769,14 @@ makeTransactionBodyAutoBalance eraInMode systemstart history pparams
     -- 4. balance the transaction and update tx change output
 
     txbody0 <- first TxBodyError $
-                 makeTransactionBody txbodycontent
+                 obtainIsCardanoEraConstraint sbe $ makeTransactionBody
+                   txbodycontent { txOuts =
+                                     TxOut changeaddr
+                                     (lovelaceToTxOutValue 0)
+                                     TxOutDatumHashNone : txOuts txbodycontent
+                                    --TODO: think about the size of the change output
+                                    -- 1,2,4 or 8 bytes?
+                                 }
 
     exUnitsMap <- first TxBodyErrorValidityInterval $
                     evaluateTransactionExecutionUnits
@@ -766,72 +791,138 @@ makeTransactionBodyAutoBalance eraInMode systemstart history pparams
                        | otherwise         -> Left (TxBodyScriptExecutionError
                                                      (Map.toList failures))
 
-    let txbodycontent1 = substituteExecutionUnits exUnitsMap' txbodycontent
+    let txbodycontentWithExecUnits = substituteExecutionUnits exUnitsMap' txbodycontent
 
     explicitTxFees <- first (const TxBodyErrorByronEraNotSupported) $
-                        txFeesExplicitInEra era'
+                        txFeesExplicitInEra (shelleyBasedToCardanoEra sbe)
 
     -- Insert change address and set tx fee to 0
-    txbody1 <- first TxBodyError $ -- TODO: impossible to fail now
-               makeTransactionBody txbodycontent1 {
-                 txFee  = TxFeeExplicit explicitTxFees 0,
-                 txOuts = TxOut changeaddr
-                                (lovelaceToTxOutValue 0)
-                                TxOutDatumHashNone
-                        : txOuts txbodycontent
-                 --TODO: think about the size of the change output
-                 -- 1,2,4 or 8 bytes?
+    txbodyZeroFeesChangeOutputZero <- first TxBodyError $ -- TODO: impossible to fail now
+               obtainIsEra sbe $ makeTransactionBody txbodycontentWithExecUnits {
+                 txFee  = TxFeeExplicit explicitTxFees 0
+
                }
 
-    let nkeys = fromMaybe (estimateTransactionKeyWitnessCount txbodycontent1)
+    eUnitsCost <- sumExecUnits exUnitsMap'
+    let nkeys = fromMaybe (estimateTransactionKeyWitnessCount txbodycontentWithExecUnits)
                           mnkeys
-        fee   = evaluateTransactionFee pparams txbody1 nkeys 0 --TODO: byron keys
+        fee   = obtainIsCardanoEraConstraint sbe $ evaluateTransactionFee pparams txbodyZeroFeesChangeOutputZero nkeys 0 --TODO: byron keys
+        totalFee = eUnitsCost + fee
 
-    txbody2 <- first TxBodyError $ -- TODO: impossible to fail now
-               makeTransactionBody txbodycontent1 {
-                 txFee = TxFeeExplicit explicitTxFees fee
+    txbodyWithFee <- first TxBodyError $ -- TODO: impossible to fail now
+               obtainIsEra sbe $  makeTransactionBody txbodycontentWithExecUnits {
+                 txFee = TxFeeExplicit explicitTxFees totalFee
                }
 
-    let balance = evaluateTransactionBalance pparams poolids utxo txbody2
+    sufficentCheck totalFee exUnitsMap' fee
+
+    let balance = obtainCLI sbe $ evaluateTransactionBalance sbe pparams poolids utxo txbodyWithFee
     -- check if the balance is positive or negative
     -- in one case we can produce change, in the other the inputs are insufficient
     minUTxOValue <- getMinUTxOValue pparams
     case balance of
-      TxOutAdaOnly _ l -> balanceCheck minUTxOValue l
+      TxOutAdaOnly _ l -> obtainIsEra sbe $ balanceCheck (AnyUTxO utxo) totalFee minUTxOValue l
       TxOutValue _ v   ->
         case valueToLovelace v of
           Nothing -> Left $ error "TODO: non-ada assets not balanced"
-          Just c -> balanceCheck minUTxOValue c
+          Just c -> obtainIsEra sbe $ balanceCheck (AnyUTxO utxo) totalFee minUTxOValue c
 
     --TODO: we could add the extra fee for the CBOR encoding of the change,
     -- now that we know the magnitude of the change: i.e. 1-8 bytes extra.
 
     txbody3 <- first TxBodyError $ -- TODO: impossible to fail now
-               makeTransactionBody txbodycontent {
-                 txFee  = TxFeeExplicit explicitTxFees fee,
+               obtainIsEra sbe $ makeTransactionBody txbodycontent {
+                 txFee  = TxFeeExplicit explicitTxFees totalFee,
                  txOuts = TxOut changeaddr balance TxOutDatumHashNone
-                        : txOuts txbodycontent
+                        : txOuts txbodycontentWithExecUnits,
+                 txIns = txIns txbodycontentWithExecUnits
                }
 
     return txbody3
  where
-   era :: ShelleyBasedEra era
-   era = shelleyBasedEra
+   execUnitsCost
+     :: ExecutionUnits
+     -> Either TxBodyErrorAutoBalance Lovelace
+   execUnitsCost (ExecutionUnits steps mem) =
+     case sbe of
+       ShelleyBasedEraAlonzo ->
+         case protocolParamPrices pparams of
+           Just (ExecutionUnitPrices pSteps pMem) ->
+             -- We use ceiling as we don't want to underestimate the execution cost
+             Right . Lovelace . ceiling $ (pSteps * toRational steps) + (pMem * toRational mem)
+           Nothing -> Left TxBodyErrorProtocolParameterPricingMissing
+       ShelleyBasedEraMary -> Right $ Lovelace 0
+       ShelleyBasedEraAllegra -> Right $ Lovelace 0
+       ShelleyBasedEraShelley -> Right $ Lovelace 0
 
-   era' :: CardanoEra era
-   era' = cardanoEra
+   sumExecUnits
+     :: Map ScriptWitnessIndex ExecutionUnits
+     -> Either TxBodyErrorAutoBalance Lovelace
+   sumExecUnits m = do
+    let execUnits = Map.elems m
+    case mapM execUnitsCost execUnits of
+      Left err -> Left err
+      Right costs -> Right $ sum costs
 
-   balanceCheck :: Lovelace -> Lovelace -> Either (TxBodyErrorAutoBalance era) ()
-   balanceCheck minUTxOValue balance
-    | balance < 0            = Left (TxBodyErrorAdaBalanceNegative balance)
+   -- We check that the total fee is at least as large
+   -- as the estimated fee + tx execution units
+   sufficentCheck
+     :: Lovelace
+     -- ^ Total fee
+     -> Map ScriptWitnessIndex ExecutionUnits
+     -- ^ Exec units map
+     -> Lovelace
+     -- ^ Estimated fee based on evaluateTransactionFee. NB:
+     -- The estimated fee does not include the estimation of
+     -- script execution units
+     -> Either TxBodyErrorAutoBalance ()
+   sufficentCheck tf@(Lovelace totalFee) m eF@(Lovelace estimatedFee) = do
+     eUnitsCost <- sumExecUnits m
+     if fromIntegral totalFee >= eUnitsCost + fromIntegral estimatedFee
+     then Right ()
+     else Left $ TxBodyErrorFeeTooSmall tf eUnitsCost eF
+
+   obtainIsEra
+     :: ShelleyBasedEra era
+     -> (IsCardanoEra era => a)
+     -> a
+   obtainIsEra ShelleyBasedEraShelley f = f
+   obtainIsEra ShelleyBasedEraAllegra f = f
+   obtainIsEra ShelleyBasedEraMary    f = f
+   obtainIsEra ShelleyBasedEraAlonzo  f = f
+
+   obtainCLI
+     :: ShelleyBasedEra era
+     -> (Ledger.CLI (ShelleyLedgerEra era) => a)
+     -> a
+   obtainCLI ShelleyBasedEraShelley f = f
+   obtainCLI ShelleyBasedEraAllegra f = f
+   obtainCLI ShelleyBasedEraMary    f = f
+   obtainCLI ShelleyBasedEraAlonzo  f = f
+
+   obtainIsCardanoEraConstraint
+     :: ShelleyBasedEra era
+     -> (( IsCardanoEra era
+         , IsShelleyBasedEra era
+         , Ledger.CLI (ShelleyLedgerEra era)
+       ) => a) -> a
+   obtainIsCardanoEraConstraint ShelleyBasedEraShelley f = f
+   obtainIsCardanoEraConstraint ShelleyBasedEraAllegra f = f
+   obtainIsCardanoEraConstraint ShelleyBasedEraMary    f = f
+   obtainIsCardanoEraConstraint ShelleyBasedEraAlonzo  f = f
+
+
+   balanceCheck :: AnyUTxO -> Lovelace -> Lovelace -> Lovelace -> Either TxBodyErrorAutoBalance ()
+   balanceCheck anyUTxO totFee minUTxOValue balance
+    | balance < 0            = Left (TxBodyErrorAdaBalanceNegative balance totFee anyUTxO)
       -- check the change is over the min utxo threshold
     | balance < minUTxOValue = Left (TxBodyErrorAdaBalanceTooSmall balance)
     | otherwise              = return ()
 
    getMinUTxOValue :: ProtocolParameters
-                   -> Either (TxBodyErrorAutoBalance era) Lovelace
+                   -> Either TxBodyErrorAutoBalance Lovelace
    getMinUTxOValue pparams' =
-     case era of
+     case sbe of
        ShelleyBasedEraShelley -> minUTxOHelper pparams'
        ShelleyBasedEraAllegra -> minUTxOHelper pparams'
        ShelleyBasedEraMary    -> minUTxOHelper pparams'
@@ -841,11 +932,10 @@ makeTransactionBodyAutoBalance eraInMode systemstart history pparams
            Nothing      -> Left TxBodyErrorMissingParamCostPerWord
 
    minUTxOHelper :: ProtocolParameters
-                 -> Either (TxBodyErrorAutoBalance era) Lovelace
+                 -> Either TxBodyErrorAutoBalance Lovelace
    minUTxOHelper pparams' = case protocolParamMinUTxOValue pparams' of
                              Just minUtxo -> Right minUtxo
                              Nothing -> Left TxBodyErrorMissingParamMinUTxO
-
 
 substituteExecutionUnits :: Map ScriptWitnessIndex ExecutionUnits
                          -> TxBodyContent BuildTx era
@@ -862,3 +952,4 @@ substituteExecutionUnits exUnitsMap =
         Nothing      -> wit
         Just exunits -> PlutusScriptWitness langInEra version script
                                             datum redeemer exunits
+

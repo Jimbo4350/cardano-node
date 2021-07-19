@@ -24,6 +24,8 @@ module Cardano.Api.Query (
     QueryInShelleyBasedEra(..),
     QueryUTxOFilter(..),
     UTxO(..),
+    AnyUTxO(..),
+    renderUTxO,
 
     -- * Internal conversion functions
     toConsensusQuery,
@@ -60,6 +62,9 @@ import           Data.Maybe (mapMaybe)
 import           Data.SOP.Strict (SListI)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import           Data.Typeable
 import           Prelude
 
@@ -74,16 +79,17 @@ import qualified Ouroboros.Consensus.HardFork.History.Qry as Qry
 
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types (RelativeTime, SlotLength)
 import qualified Ouroboros.Consensus.Byron.Ledger as Consensus
-import           Ouroboros.Consensus.Cardano.Block (StandardCrypto, LedgerState(..))
+import           Ouroboros.Consensus.Cardano.Block (LedgerState (..), StandardCrypto)
 import qualified Ouroboros.Consensus.Cardano.Block as Consensus
 import qualified Ouroboros.Consensus.Ledger.Query as Consensus
 import qualified Ouroboros.Consensus.Shelley.Ledger as Consensus
 import           Ouroboros.Network.Block (Serialised)
 
 import           Cardano.Binary
-import           Cardano.Slotting.Time (SystemStart(..))
+import           Cardano.Slotting.Time (SystemStart (..))
 
 import qualified Cardano.Chain.Update.Validation.Interface as Byron.Update
+import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Era as Ledger
 
@@ -100,6 +106,7 @@ import           Cardano.Api.Modes
 import           Cardano.Api.NetworkId
 import           Cardano.Api.Orphans ()
 import           Cardano.Api.ProtocolParameters
+import           Cardano.Api.Render
 import           Cardano.Api.TxBody
 import           Cardano.Api.Value
 
@@ -240,6 +247,40 @@ newtype ByronUpdateState = ByronUpdateState Byron.Update.State
   deriving Show
 
 newtype UTxO era = UTxO (Map TxIn (TxOut era))
+
+deriving instance Show (UTxO era)
+
+data AnyUTxO where
+  AnyUTxO :: UTxO era -> AnyUTxO
+
+deriving instance Show AnyUTxO
+
+
+renderUTxO
+  :: AnyUTxO
+  -> Text
+renderUTxO (AnyUTxO (UTxO utxo)) = do
+  let utxoList = Map.toList utxo
+  mconcat $ map singleLine utxoList
+  where
+   singleLine :: (TxIn, TxOut era) -> Text
+   singleLine (TxIn (TxId txhash) (TxIx index), TxOut _ value _) =
+           mconcat
+             [ Text.decodeLatin1 (Crypto.hashToBytesAsHex txhash)
+             , textShowN 6 index
+             , "        " <> printableValue value
+             , "/n"
+             ]
+
+   textShowN :: Show a => Int -> a -> Text
+   textShowN len x =
+     let str = show x
+         slen = length str
+     in Text.pack $ replicate (max 1 (len - slen)) ' ' ++ str
+
+   printableValue :: TxOutValue era -> Text
+   printableValue (TxOutValue _ val) = renderValue val
+   printableValue (TxOutAdaOnly _ (Lovelace i)) = Text.pack $ show i
 
 instance IsCardanoEra era => ToJSON (UTxO era) where
   toJSON (UTxO m) = toJSON m

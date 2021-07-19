@@ -71,6 +71,7 @@ library
                         Cardano.Api.OperationalCertificate
                         Cardano.Api.ProtocolParameters
                         Cardano.Api.Query
+                        Cardano.Api.Render
                         Cardano.Api.Script
                         Cardano.Api.ScriptData
                         Cardano.Api.SerialiseBech32
@@ -127,6 +128,7 @@ library
                       , ouroboros-consensus-shelley
                       , ouroboros-network
                       , ouroboros-network-framework
+                      , plutus-core
                       , plutus-ledger-api
                       , prettyprinter
                       , scientific

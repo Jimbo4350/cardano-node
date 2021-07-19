@@ -22,6 +22,7 @@ module Cardano.Api (
     AnyCardanoEra(..),
     anyCardanoEra,
     InAnyCardanoEra(..),
+    shelleyBasedToCardanoEra,
 
     -- ** Shelley-based eras
     ShelleyBasedEra(..),
@@ -568,6 +569,10 @@ module Cardano.Api (
     --TODO: Remove after updating cardano-node-chairman with new IPC
     SomeNodeClientProtocol(..),
 
+    -- ** Rendering
+    renderPrettyValue,
+    renderValue,
+
     SlotsInEpoch(..),
     SlotsToEpochEnd(..),
     slotToEpoch,
@@ -595,6 +600,7 @@ import           Cardano.Api.NetworkId
 import           Cardano.Api.OperationalCertificate
 import           Cardano.Api.ProtocolParameters
 import           Cardano.Api.Query hiding (LedgerState (..))
+import           Cardano.Api.Render
 import           Cardano.Api.Script
 import           Cardano.Api.ScriptData
 import           Cardano.Api.SerialiseBech32

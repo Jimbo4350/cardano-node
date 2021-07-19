@@ -1,3 +1,4 @@
+
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
@@ -38,6 +39,7 @@ module Cardano.Api.TxBody (
     genesisUTxOPseudoTxIn,
 
     -- * Transaction outputs
+    AnyTxOut (..),
     TxOut(..),
     TxOutValue(..),
     lovelaceToTxOutValue,
@@ -111,8 +113,8 @@ module Cardano.Api.TxBody (
     toAlonzoRdmrPtr,
     fromAlonzoRdmrPtr,
     fromByronTxIn,
-    renderTxIn,
     renderScriptWitnessIndex,
+    renderTxIn,
 
     -- * Data family instances
     AsType(AsTxId, AsTxBody, AsByronTxBody, AsShelleyTxBody, AsMaryTxBody),
@@ -156,9 +158,9 @@ import qualified Cardano.Crypto.Hashing as Byron
 import qualified Cardano.Ledger.Address as Shelley
 import qualified Cardano.Ledger.AuxiliaryData as Ledger (hashAuxiliaryData)
 import           Cardano.Ledger.BaseTypes (StrictMaybe (..), maybeToStrictMaybe)
-import qualified Cardano.Ledger.Credential as Shelley
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Core as Ledger
+import qualified Cardano.Ledger.Credential as Shelley
 import qualified Cardano.Ledger.Era as Ledger
 import qualified Cardano.Ledger.Keys as Shelley
 import qualified Cardano.Ledger.SafeHash as SafeHash
@@ -330,6 +332,13 @@ data TxOut era = TxOut (AddressInEra era)
 
 deriving instance Eq   (TxOut era)
 deriving instance Show (TxOut era)
+
+data AnyTxOut where
+     AnyTxOut :: IsCardanoEra era
+              => TxOut era
+              -> AnyTxOut
+
+deriving instance Show AnyTxOut
 
 instance IsCardanoEra era => ToJSON (TxOut era) where
   toJSON (TxOut addr val TxOutDatumHashNone) =
@@ -849,13 +858,11 @@ instance ToJSON (TxOutValue era) where
   toJSON (TxOutAdaOnly _ ll) = toJSON ll
   toJSON (TxOutValue _ val) = toJSON val
 
-
 lovelaceToTxOutValue :: IsCardanoEra era => Lovelace -> TxOutValue era
 lovelaceToTxOutValue l =
     case multiAssetSupportedInEra cardanoEra of
       Left adaOnly     -> TxOutAdaOnly adaOnly  l
       Right multiAsset -> TxOutValue multiAsset (lovelaceToValue l)
-
 
 -- ----------------------------------------------------------------------------
 -- Transaction output datum (era-dependent)
@@ -1359,12 +1366,12 @@ instance IsCardanoEra era => HasTextEnvelope (TxBody era) where
 -- Constructing transaction bodies
 --
 
-data TxBodyError era =
+data TxBodyError =
        TxBodyEmptyTxIns
      | TxBodyEmptyTxInsCollateral
      | TxBodyEmptyTxOuts
-     | TxBodyOutputNegative Quantity (TxOut era)
-     | TxBodyOutputOverflow Quantity (TxOut era)
+     | TxBodyOutputNegative Quantity AnyTxOut
+     | TxBodyOutputOverflow Quantity AnyTxOut
      | TxBodyMetadataError [(Word64, TxMetadataRangeError)]
      | TxBodyMintAdaError
      | TxBodyAuxDataHashInvalidError
@@ -1372,7 +1379,7 @@ data TxBodyError era =
      | TxBodyMissingProtocolParams
      deriving Show
 
-instance Error (TxBodyError era) where
+instance Error TxBodyError where
     displayError TxBodyEmptyTxIns  = "Transaction body has no inputs"
     displayError TxBodyEmptyTxInsCollateral =
       "Transaction body has no collateral inputs, but uses Plutus scripts"
@@ -1404,7 +1411,7 @@ instance Error (TxBodyError era) where
 makeTransactionBody :: forall era.
                        IsCardanoEra era
                     => TxBodyContent BuildTx era
-                    -> Either (TxBodyError era) (TxBody era)
+                    -> Either TxBodyError (TxBody era)
 makeTransactionBody =
     case cardanoEraStyle (cardanoEra :: CardanoEra era) of
       LegacyByronEra      -> makeByronTransactionBody
@@ -1779,7 +1786,7 @@ fromLedgerTxMintValue era body =
 
 
 makeByronTransactionBody :: TxBodyContent BuildTx ByronEra
-                         -> Either (TxBodyError ByronEra) (TxBody ByronEra)
+                         -> Either TxBodyError (TxBody ByronEra)
 makeByronTransactionBody TxBodyContent { txIns, txOuts } = do
     ins'  <- NonEmpty.nonEmpty txIns      ?! TxBodyEmptyTxIns
     let ins'' = NonEmpty.map (toByronTxIn . fst) ins'
@@ -1795,12 +1802,12 @@ makeByronTransactionBody TxBodyContent { txIns, txOuts } = do
             (Byron.UnsafeTx ins'' outs'' (Byron.mkAttributes ()))
             ()
   where
-    classifyRangeError :: TxOut ByronEra -> TxBodyError ByronEra
+    classifyRangeError :: TxOut ByronEra -> TxBodyError
     classifyRangeError
       txout@(TxOut (AddressInEra ByronAddressInAnyEra ByronAddress{})
                    (TxOutAdaOnly AdaOnlyInByronEra value) _)
-      | value < 0        = TxBodyOutputNegative (lovelaceToQuantity value) txout
-      | otherwise        = TxBodyOutputOverflow (lovelaceToQuantity value) txout
+      | value < 0        = TxBodyOutputNegative (lovelaceToQuantity value) (AnyTxOut txout)
+      | otherwise        = TxBodyOutputOverflow (lovelaceToQuantity value) (AnyTxOut txout)
 
     classifyRangeError
       (TxOut (AddressInEra ByronAddressInAnyEra (ByronAddress _))
@@ -1835,7 +1842,7 @@ getByronTxBodyContent (Annotated Byron.UnsafeTx{txInputs, txOutputs} _) =
 
 makeShelleyTransactionBody :: ShelleyBasedEra era
                            -> TxBodyContent BuildTx era
-                           -> Either (TxBodyError era) (TxBody era)
+                           -> Either TxBodyError (TxBody era)
 makeShelleyTransactionBody era@ShelleyBasedEraShelley
                            txbodycontent@TxBodyContent {
                              txIns,
@@ -1850,8 +1857,8 @@ makeShelleyTransactionBody era@ShelleyBasedEraShelley
 
     guard (not (null txIns)) ?! TxBodyEmptyTxIns
     sequence_
-      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
-           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
+      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) (AnyTxOut txout)
+           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) (AnyTxOut txout)
       | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
       , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInShelleyEra v) _) <- txOuts ]
     case txMetadata of
@@ -1915,8 +1922,8 @@ makeShelleyTransactionBody era@ShelleyBasedEraAllegra
 
     guard (not (null txIns)) ?! TxBodyEmptyTxIns
     sequence_
-      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
-           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
+      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) (AnyTxOut txout)
+           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) (AnyTxOut txout)
       | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
       , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInAllegraEra v) _) <- txOuts
       ]
@@ -1998,10 +2005,10 @@ makeShelleyTransactionBody era@ShelleyBasedEraMary
       , txout@(TxOut _ (TxOutValue MultiAssetInMaryEra v) _) <- txOuts
       , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
                                   []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputNegative q txout)
+                                  q:_ -> Left (TxBodyOutputNegative q (AnyTxOut txout))
             allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
                                   []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputOverflow q txout)
+                                  q:_ -> Left (TxBodyOutputOverflow q (AnyTxOut txout))
       ]
     case txMetadata of
       TxMetadataNone      -> return ()
@@ -2090,10 +2097,10 @@ makeShelleyTransactionBody era@ShelleyBasedEraAlonzo
       , txout@(TxOut _ (TxOutValue MultiAssetInAlonzoEra v) _) <- txOuts
       , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
                                   []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputNegative q txout)
+                                  q:_ -> Left (TxBodyOutputNegative q (AnyTxOut txout))
             allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
                                   []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputOverflow q txout)
+                                  q:_ -> Left (TxBodyOutputOverflow q (AnyTxOut txout))
       ]
     case txMetadata of
       TxMetadataNone      -> return ()
@@ -2249,15 +2256,15 @@ data ScriptWitnessIndex =
    | ScriptWitnessIndexWithdrawal !Word
   deriving (Eq, Ord, Show)
 
-renderScriptWitnessIndex :: ScriptWitnessIndex -> String
+renderScriptWitnessIndex :: ScriptWitnessIndex -> Text
 renderScriptWitnessIndex (ScriptWitnessIndexTxIn index) =
-  "transaction input " <> show index <> " (in the order of the TxIds)"
+  "transaction input " <> Text.pack (show index) <> " (in the order of the TxIds)"
 renderScriptWitnessIndex (ScriptWitnessIndexMint index) =
-  "policyId " <> show index <> " (in the order of the PolicyIds)"
+  "policyId " <> Text.pack (show index) <> " (in the order of the PolicyIds)"
 renderScriptWitnessIndex (ScriptWitnessIndexCertificate index) =
-  "certificate " <> show index <> " (in the list order of the certificates)"
+  "certificate " <> Text.pack (show index) <> " (in the list order of the certificates)"
 renderScriptWitnessIndex (ScriptWitnessIndexWithdrawal index) =
-  "withdrawal " <> show index <> " (in the order of the StakeAddresses)"
+  "withdrawal " <> Text.pack (show index) <> " (in the order of the StakeAddresses)"
 
 toAlonzoRdmrPtr :: ScriptWitnessIndex -> Alonzo.RdmrPtr
 toAlonzoRdmrPtr widx =
@@ -2274,7 +2281,6 @@ fromAlonzoRdmrPtr (Alonzo.RdmrPtr tag n) =
       Alonzo.Mint  -> ScriptWitnessIndexMint        (fromIntegral n)
       Alonzo.Cert  -> ScriptWitnessIndexCertificate (fromIntegral n)
       Alonzo.Rewrd -> ScriptWitnessIndexWithdrawal  (fromIntegral n)
-
 
 mapTxScriptWitnesses :: forall era.
                         (forall witctx. ScriptWitnessIndex
@@ -2299,11 +2305,15 @@ mapTxScriptWitnesses f txbodycontent@TxBodyContent {
       :: [(TxIn, BuildTxWith BuildTx (Witness WitCtxTxIn era))]
       -> [(TxIn, BuildTxWith BuildTx (Witness WitCtxTxIn era))]
     mapScriptWitnessesTxIns txins =
-        [ (txin, BuildTxWith (ScriptWitness ctx witness'))
+        [ (txin, BuildTxWith $
+            -- We must retain the key witnesses
+            case wit of
+              ScriptWitness ctx witness ->
+                ScriptWitness ctx $ f (ScriptWitnessIndexTxIn ix) witness
+              _ -> wit
+          )
           -- The tx ins are indexed in the map order by txid
-        | (ix, (txin, BuildTxWith (ScriptWitness ctx witness)))
-            <- zip [0..] (orderTxIns txins)
-        , let witness' = f (ScriptWitnessIndexTxIn ix) witness
+        | (ix, (txin, BuildTxWith wit)) <- zip [0..] (orderTxIns txins)
         ]
 
     mapScriptWitnessesWithdrawals
@@ -2355,7 +2365,6 @@ mapTxScriptWitnesses f txbodycontent@TxBodyContent {
         , witness <- maybeToList (Map.lookup policyid witnesses)
         , let witness' = f (ScriptWitnessIndexMint ix) witness
         ]
-
 
 collectTxBodyScriptWitnesses :: forall era.
                                 TxBodyContent BuildTx era
