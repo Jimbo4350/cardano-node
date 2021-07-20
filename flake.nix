@@ -2,8 +2,12 @@
   description = "Cardano Node";
 
   inputs = {
-    haskellNix.url = "github:input-output-hk/haskell.nix";
+    # IMPORTANT: report any change to nixpkgs channel in nix/default.nix:
     nixpkgs.follows = "haskellNix/nixpkgs-2105";
+    haskellNix = {
+      url = "github:input-output-hk/haskell.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     utils.url = "github:numtide/flake-utils";
     iohkNix = {
       url = "github:input-output-hk/iohk-nix";
@@ -16,7 +20,6 @@
 
   outputs = { self, nixpkgs, utils, haskellNix, iohkNix, customConfig }:
     let
-      inherit (haskellNix.internal) config;
       inherit (nixpkgs) lib;
       inherit (lib) head systems mapAttrs recursiveUpdate mkDefault
         getAttrs optionalAttrs nameValuePair attrNames;
@@ -27,7 +30,6 @@
       defaultSystem = head supportedSystems;
 
       overlays = [
-        haskellNix.overlay
         iohkNix.overlays.haskell-nix-extra
         iohkNix.overlays.crypto
         iohkNix.overlays.cardano-lib
@@ -46,7 +48,7 @@
 
     in eachSystem supportedSystems (system:
       let
-        pkgs = import nixpkgs { inherit system overlays config; };
+        pkgs = haskellNix.legacyPackages.${system}.appendOverlays overlays;
 
         inherit (pkgs.commonLib) eachEnv environments;
 
@@ -54,13 +56,9 @@
 
         flake = pkgs.cardanoNodeProject.flake {};
 
-        muslFlake = (import nixpkgs { inherit system overlays config;
-          crossSystem = systems.examples.musl64;
-        }).cardanoNodeProject.flake {};
+        staticFlake = pkgs.pkgsStatic.cardanoNodeProject.flake {};
 
-        windowsFlake = (import nixpkgs { inherit system overlays config;
-          crossSystem = systems.examples.mingwW64;
-        }).cardanoNodeProject.flake {};
+        windowsFlake = pkgs.pkgsCross.${systems.examples.mingwW64}.cardanoNodeProject.flake {};
 
         scripts = flattenTree pkgs.scripts;
 
@@ -93,8 +91,7 @@
         // scripts
         // exes
         // (prefixNamesWith "static/"
-              (mapAttrs pkgs.rewriteStatic (lazyCollectExe
-                (if system == "x86_64-darwin" then flake else muslFlake).packages)))
+              (mapAttrs pkgs.rewriteStatic (lazyCollectExe staticFlake.packages)))
         # Linux only packages:
         // optionalAttrs (system == "x86_64-linux") (
           prefixNamesWith "windows/" (lazyCollectExe windowsFlake.packages)
