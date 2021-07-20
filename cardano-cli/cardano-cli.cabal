@@ -92,6 +92,8 @@ library
                         Cardano.CLI.Mary.RenderValue
                         Cardano.CLI.Mary.ValueParser
 
+                        Cardano.CLI.Render
+
                         Cardano.CLI.TopHandler
 
   other-modules:        Paths_cardano_cli
