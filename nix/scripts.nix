@@ -10,11 +10,12 @@ let
       modules = [
         ./nixos/cardano-node-service.nix
         ({config, ...}: {
-          services.cardano-node = {
+          services.cardano-node = let cfg = config.services.cardano-node; in {
             hostAddr = mkDefault "0.0.0.0";
             environment = mkDefault envConfig.name;
+            nodeConfig = cfg.environments.${cfg.environment}.nodeConfig;
             cardanoNodePkgs = mkDefault pkgs;
-            stateDir = mkDefault "state-node-${config.services.cardano-node.environment}";
+            stateDir = mkDefault "state-node-${cfg.environment}";
             runtimeDir = mkDefault null;
           } // optionalAttrs (envConfig ? topology) {
             topology = mkDefault envConfig.topology;
