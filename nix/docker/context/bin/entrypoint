@@ -2,15 +2,15 @@
 
 if [[ -n $NETWORK ]]; then
 
-  exec /usr/local/bin/run-network $@
+  exec /usr/local/bin/run-network "$@"
 
 elif [[ $1 == "run" ]]; then
 
-  exec /usr/local/bin/run-node $@
+  exec /usr/local/bin/run-node "$@"
 
 elif [[ $1 == "cli" ]]; then
 
-  exec /usr/local/bin/run-client $@
+  exec /usr/local/bin/run-client "$@"
 
 else
 
