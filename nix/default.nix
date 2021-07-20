@@ -19,7 +19,8 @@ let
   };
   sources = flakeSources // sourcesOverride;
   haskellNix = import sources."haskell.nix" { inherit system sourcesOverride; };
-  nixpkgs = haskellNix.sources.nixpkgs-unstable;
+  # IMPORTANT: report any change to nixpkgs channel in flake.nix:
+  nixpkgs = haskellNix.sources.nixpkgs-2105;
   iohkNix = import sources.iohk-nix { inherit system; };
   # for inclusion in pkgs:
   overlays =
