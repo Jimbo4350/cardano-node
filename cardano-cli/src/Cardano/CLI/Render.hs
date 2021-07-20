@@ -5,6 +5,7 @@ module Cardano.CLI.Render
   ) where
 
 import Data.Function
+import Data.Ord
 import Options.Applicative.Help.Ann
 import Prettyprinter
 import Prettyprinter.Render.Util.Panic
@@ -15,13 +16,15 @@ import qualified Data.Text as T
 
 renderOpenAnn :: Ann -> ShowS
 renderOpenAnn ann = case ann of
-  AnnTrace s -> id
+  AnnTrace _ s -> id
     . ("<span trace=" <>)
     . (show s <>)
     . (">" <>)
 
-renderCloseAnn :: ShowS
-renderCloseAnn = (<> "</span>")
+renderCloseAnn :: Ann -> ShowS
+renderCloseAnn ann = case ann of
+  AnnTrace _ _ -> id
+    . (<> "</span>")
 
 -- | Render a 'SimpleDocStream' to a 'ShowS', useful to write 'Show' instances
 -- based on the prettyprinter.
@@ -38,14 +41,18 @@ renderHtmlShowS ds = id
   . (<> "\n</pre>")
   . (<> "\n</body>")
   . (<> "\n</html>")
-  . go ds
+  . go [] ds
   where
-    go :: SimpleDocStream Ann -> ShowS
-    go sds = case sds of
+    go :: [Ann] -> SimpleDocStream Ann -> ShowS
+    go anns sds = case sds of
       SFail           -> panicUncaughtFail
       SEmpty          -> id
-      SChar c x       -> showChar c . go x
-      SText _l t x    -> showString (T.unpack t) . go x
-      SLine i x       -> showString ('\n' : L.replicate i ' ') . go x
-      SAnnPush ann x  -> renderOpenAnn ann . go x
-      SAnnPop x       -> go x . renderCloseAnn
+      SChar c x       -> showChar c . go anns x
+      SText _l t x    -> showString (T.unpack t) . go anns x
+      SLine i x       -> showString ('\n' : L.replicate i ' ') . go anns x
+      SAnnPush ann x  -> onLevel ann (renderOpenAnn ann) . go (ann:anns) x
+      SAnnPop x       -> case anns of
+        (a:as) -> go as x . onLevel a (renderCloseAnn a)
+        [] -> go [] x
+    onLevel :: Ann -> ShowS -> ShowS
+    onLevel (AnnTrace n _) f = if n >= 2 then f else id
