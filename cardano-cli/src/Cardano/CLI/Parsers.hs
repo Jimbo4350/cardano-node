@@ -1,17 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Cardano.CLI.Parsers
   ( opts
   , pref
   ) where
 
 import           Cardano.Prelude
-import           Prelude (String)
-
-import           Options.Applicative
-import qualified Options.Applicative as Opt
-
+import           Data.Function (id)
 import           Cardano.CLI.Byron.Parsers (backwardsCompatibilityCommands, parseByronCommands)
 import           Cardano.CLI.Run (ClientCommand (..))
 import           Cardano.CLI.Shelley.Parsers (parseShelleyCommands)
+import           Options.Applicative
+import           Options.Applicative.Help.Ann
+import           Options.Applicative.Help.Types (helpText)
+import           Prelude (String)
+import           Prettyprinter
+import           Prettyprinter.Render.Util.SimpleDocTree
+
+import qualified Data.Text as T
+import qualified Options.Applicative as Opt
 
 command' :: String -> String -> Parser a -> Mod CommandFields a
 command' c descr p =
@@ -29,7 +36,25 @@ opts =
     )
 
 pref :: ParserPrefs
-pref = Opt.prefs showHelpOnEmpty
+pref = Opt.prefs $ mempty
+  <> showHelpOnEmpty
+  <> helpHangUsageOverflow 10
+  <> helpRenderHelp customRenderHelp
+
+-- | Convert a help text to 'String'.
+customRenderHelp :: Int -> ParserHelp -> String
+customRenderHelp cols
+  = T.unpack
+  . ("<html>\n" <>)
+  . ("<body>\n" <>)
+  . ("<pre>\n" <>)
+  . (<> "\n</html>")
+  . (<> "\n</body>")
+  . (<> "\n</pre>")
+  . renderSimplyDecorated id (\(AnnTrace _ name) x -> "<span name=" <> show name <> ">" <> x <> "</span>")
+  . treeForm
+  . layoutSmart (LayoutOptions (AvailablePerLine cols 1.0))
+  . helpText
 
 parseClientCommand :: Parser ClientCommand
 parseClientCommand =

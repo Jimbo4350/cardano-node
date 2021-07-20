@@ -282,4 +282,4 @@ parserHelpOptions = fromMaybe mempty . OptI.unChunk . OptI.fullDesc (Opt.prefs m
 -- | Render the help pretty document.
 renderHelpDoc :: Int -> OptI.Doc -> String
 renderHelpDoc cols =
-  (`OptI.displayS` "") . OptI.renderPretty 1.0 cols
+  (`OptI.renderShowS` "") . OptI.layoutPretty (OptI.LayoutOptions (OptI.AvailablePerLine cols 1.0))

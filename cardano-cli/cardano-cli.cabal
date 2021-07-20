@@ -92,6 +92,8 @@ library
                         Cardano.CLI.Mary.RenderValue
                         Cardano.CLI.Mary.ValueParser
 
+                        Cardano.CLI.Render
+
                         Cardano.CLI.TopHandler
 
   other-modules:        Paths_cardano_cli
@@ -133,6 +135,7 @@ library
                       , ouroboros-network
                       , parsec
                       , plutus-ledger-api
+                      , prettyprinter
                       , shelley-spec-ledger
                       , small-steps
                       , split

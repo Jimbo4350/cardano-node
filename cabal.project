@@ -12,6 +12,8 @@ packages:
     nix/workbench/cardano-topology
     bench/tx-generator
     nix/workbench/locli
+    optparse-applicative
+    criterion
 
 package cardano-api
   ghc-options: -Werror
