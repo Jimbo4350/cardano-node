@@ -32,7 +32,8 @@ import qualified Cardano.Ledger.Keys as Shelley
 import           Cardano.Api
 import           Cardano.Api.Byron hiding (SomeByronSigningKey (..))
 import qualified Cardano.Api.Byron as ByronApi
-import           Cardano.Api.Crypto.Ed25519Bip32 (xPrvFromBytes)
+import           Cardano.Api.Crypto.Ed25519Bip32 (Ed25519Bip32DSIGN, SignKeyDSIGN (..),
+                     VerKeyDSIGN (..))
 import           Cardano.Api.Shelley
 
 import qualified Cardano.CLI.Byron.Key as Byron
@@ -268,13 +269,15 @@ runConvertByronKey mPwd (ByronGenesisKey format) (ASigningKeyFile skeyPathOld) =
     convertByronSigningKey mPwd format convert skeyPathOld
   where
     convert :: Byron.SigningKey -> SigningKey GenesisExtendedKey
-    convert (Byron.SigningKey xsk) = GenesisExtendedSigningKey xsk
+    convert (Byron.SigningKey xsk) =
+      GenesisExtendedSigningKey (SignKeyEd25519Bip32DSIGN xsk)
 
 runConvertByronKey mPwd (ByronDelegateKey format) (ASigningKeyFile skeyPathOld) =
     convertByronSigningKey mPwd format convert skeyPathOld
   where
     convert :: Byron.SigningKey -> SigningKey GenesisDelegateExtendedKey
-    convert (Byron.SigningKey xsk) = GenesisDelegateExtendedSigningKey xsk
+    convert (Byron.SigningKey xsk) =
+      GenesisDelegateExtendedSigningKey (SignKeyEd25519Bip32DSIGN xsk)
 
 runConvertByronKey _ (ByronPaymentKey NonLegacyByronKeyFormat)
                      (AVerificationKeyFile vkeyPathOld) =
@@ -288,7 +291,8 @@ runConvertByronKey _ (ByronGenesisKey NonLegacyByronKeyFormat)
     convertByronVerificationKey convert vkeyPathOld
   where
     convert :: Byron.VerificationKey -> VerificationKey GenesisExtendedKey
-    convert (Byron.VerificationKey xvk) = GenesisExtendedVerificationKey xvk
+    convert (Byron.VerificationKey xvk) =
+      GenesisExtendedVerificationKey (VerKeyEd25519Bip32DSIGN xvk)
 
 runConvertByronKey _ (ByronDelegateKey NonLegacyByronKeyFormat)
                      (AVerificationKeyFile vkeyPathOld) =
@@ -297,7 +301,7 @@ runConvertByronKey _ (ByronDelegateKey NonLegacyByronKeyFormat)
     convert :: Byron.VerificationKey
             -> VerificationKey GenesisDelegateExtendedKey
     convert (Byron.VerificationKey xvk) =
-      GenesisDelegateExtendedVerificationKey xvk
+      GenesisDelegateExtendedVerificationKey (VerKeyEd25519Bip32DSIGN xvk)
 
 runConvertByronKey _ (ByronPaymentKey  LegacyByronKeyFormat)
                       AVerificationKeyFile{} =
@@ -396,7 +400,8 @@ runConvertByronGenesisVerificationKey (VerificationKeyBase64 b64ByronVKey)
   where
     convert :: Byron.VerificationKey -> VerificationKey GenesisKey
     convert (Byron.VerificationKey xvk) =
-      castVerificationKey (GenesisExtendedVerificationKey xvk)
+      castVerificationKey
+        (GenesisExtendedVerificationKey $ VerKeyEd25519Bip32DSIGN xvk)
 
 
 --------------------------------------------------------------------------------
@@ -491,8 +496,8 @@ convertITNExtendedSigningKey :: Text -> Either ItnKeyConversionError (SigningKey
 convertITNExtendedSigningKey privKey = do
   (_, _, privkeyBS) <- first ItnKeyBech32DecodeError (decodeBech32 privKey)
   let dummyChainCode = BS.replicate 32 0
-  case xPrvFromBytes $ BS.concat [privkeyBS, dummyChainCode] of
-    Just xprv -> Right $ StakeExtendedSigningKey xprv
+  case DSIGN.rawDeserialiseSignKeyDSIGN $ BS.concat [privkeyBS, dummyChainCode] of
+    Just xsk -> Right $ StakeExtendedSigningKey xsk
     Nothing -> Left $ ItnSigningKeyDeserialisationError privkeyBS
 
 -- BIP32 Private key = 96 bytes (64 bytes extended private key + 32 bytes chaincode)
@@ -500,8 +505,8 @@ convertITNExtendedSigningKey privKey = do
 convertITNBIP32SigningKey :: Text -> Either ItnKeyConversionError (SigningKey StakeExtendedKey)
 convertITNBIP32SigningKey privKey = do
   (_, _, privkeyBS) <- first ItnKeyBech32DecodeError (decodeBech32 privKey)
-  case xPrvFromBytes privkeyBS of
-    Just xprv -> Right $ StakeExtendedSigningKey xprv
+  case DSIGN.rawDeserialiseSignKeyDSIGN privkeyBS of
+    Just xsk -> Right $ StakeExtendedSigningKey xsk
     Nothing -> Left $ ItnSigningKeyDeserialisationError privkeyBS
 
 readFileITNKey :: FilePath -> IO (Either ItnKeyConversionError Text)
@@ -573,16 +578,15 @@ decodeBech32 bech32Str =
           Left $ Bech32DataPartToBytesError (Bech32.dataPartToText dataPart)
         Just bs -> Right (hrPart, dataPart, bs)
 
--- | Convert a Ed25519 BIP32 extended signing key (96 bytes) to a @cardano-crypto@
--- style extended signing key.
+-- | Deserialise a Ed25519 BIP32 extended signing key (96 or 128 bytes).
 --
--- Note that both the ITN and @cardano-address@ use this key format.
-convertBip32SigningKey
+-- Note that both the ITN and @cardano-address@ use the 96 byte key format.
+deserialiseEd25519Bip32SigningKey
   :: ByteString
-  -> Either CardanoAddressSigningKeyConversionError Crypto.XPrv
-convertBip32SigningKey signingKeyBs =
-  case xPrvFromBytes signingKeyBs of
-    Just xPrv -> Right xPrv
+  -> Either CardanoAddressSigningKeyConversionError (SignKeyDSIGN Ed25519Bip32DSIGN)
+deserialiseEd25519Bip32SigningKey signingKeyBs =
+  case DSIGN.rawDeserialiseSignKeyDSIGN signingKeyBs of
+    Just sk -> Right sk
     Nothing ->
       Left $ CardanoAddressSigningKeyDeserialisationError signingKeyBs
 
@@ -590,7 +594,7 @@ convertBip32SigningKey signingKeyBs =
 -- key.
 readBech32Bip32SigningKeyFile
   :: SigningKeyFile
-  -> IO (Either (FileError CardanoAddressSigningKeyConversionError) Crypto.XPrv)
+  -> IO (Either (FileError CardanoAddressSigningKeyConversionError) (SignKeyDSIGN Ed25519Bip32DSIGN))
 readBech32Bip32SigningKeyFile (SigningKeyFile fp) = do
   eStr <- Exception.try $ readFile fp
   case eStr of
@@ -601,7 +605,7 @@ readBech32Bip32SigningKeyFile (SigningKeyFile fp) = do
           pure $ Left $
             FileError fp (CardanoAddressSigningKeyBech32DecodeError err)
         Right (_hrPart, _dataPart, bs) ->
-          pure $ first (FileError fp) (convertBip32SigningKey bs)
+          pure $ first (FileError fp) (deserialiseEd25519Bip32SigningKey bs)
 
 -- | Read a file containing a Bech32-encoded @cardano-address@ extended
 -- signing key.
@@ -610,17 +614,19 @@ readSomeCardanoAddressSigningKeyFile
   -> SigningKeyFile
   -> IO (Either (FileError CardanoAddressSigningKeyConversionError) SomeCardanoAddressSigningKey)
 readSomeCardanoAddressSigningKeyFile keyType skFile = do
-    xPrv <- readBech32Bip32SigningKeyFile skFile
-    pure (toSomeCardanoAddressSigningKey <$> xPrv)
+    sk <- readBech32Bip32SigningKeyFile skFile
+    pure (toSomeCardanoAddressSigningKey <$> sk)
   where
-    toSomeCardanoAddressSigningKey :: Crypto.XPrv -> SomeCardanoAddressSigningKey
-    toSomeCardanoAddressSigningKey xPrv =
+    toSomeCardanoAddressSigningKey
+      :: SignKeyDSIGN Ed25519Bip32DSIGN
+      -> SomeCardanoAddressSigningKey
+    toSomeCardanoAddressSigningKey sk@(SignKeyEd25519Bip32DSIGN xPrv) =
       case keyType of
         CardanoAddressShelleyPaymentKey ->
           ACardanoAddrShelleyPaymentSigningKey
-            (PaymentExtendedSigningKey xPrv)
+            (PaymentExtendedSigningKey sk)
         CardanoAddressShelleyStakeKey ->
-          ACardanoAddrShelleyStakeSigningKey (StakeExtendedSigningKey xPrv)
+          ACardanoAddrShelleyStakeSigningKey (StakeExtendedSigningKey sk)
         CardanoAddressIcarusPaymentKey ->
           ACardanoAddrByronSigningKey $
             ByronSigningKey (Byron.SigningKey xPrv)

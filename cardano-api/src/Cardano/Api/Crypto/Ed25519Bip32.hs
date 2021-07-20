@@ -170,7 +170,7 @@ xPrvToBytes xPrv = privateKeyBytes <> chainCodeBytes
     chainCodeBytes :: ByteString
     chainCodeBytes = BS.drop 96 (CC.unXPrv xPrv)
 
--- | Deserialise an 'CC.XPrv' from a 'ByteString' (96 bytes).
+-- | Deserialise an 'CC.XPrv' from a 'ByteString' (96 or 128 bytes).
 --
 -- In @cardano-crypto@, an 'CC.XPrv' was originally deserialised using the
 -- following 128-byte binary format:
@@ -179,8 +179,8 @@ xPrvToBytes xPrv = privateKeyBytes <> chainCodeBytes
 -- | Extended Private Key (64 bytes) | Public Key (32 bytes) | Chain Code (32 bytes) |
 -- +---------------------------------+-----------------------+-----------------------+
 --
--- However, this function deserialises an 'CC.XPrv' using a more compact
--- 96-byte binary format:
+-- However, this function also supports deserialising an 'CC.XPrv' using a
+-- more compact 96-byte binary format:
 --
 -- +---------------------------------+-----------------------+
 -- | Extended Private Key (64 bytes) | Chain Code (32 bytes) |
@@ -188,11 +188,12 @@ xPrvToBytes xPrv = privateKeyBytes <> chainCodeBytes
 --
 xPrvFromBytes :: ByteString -> Maybe CC.XPrv
 xPrvFromBytes bytes
-    | BS.length bytes /= 96 = Nothing
-    | otherwise = do
+    | BS.length bytes == 96 = do
         let (prv, cc) = BS.splitAt 64 bytes
         pub <- ed25519ScalarMult (BS.take 32 prv)
         eitherToMaybe $ CC.xprv $ prv <> pub <> cc
+    | BS.length bytes == 128 = eitherToMaybe (CC.xprv bytes)
+    | otherwise = Nothing
   where
     eitherToMaybe :: Either a b -> Maybe b
     eitherToMaybe = either (const Nothing) Just

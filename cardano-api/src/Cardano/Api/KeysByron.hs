@@ -52,8 +52,9 @@ import qualified Cardano.Crypto.Hashing as Byron
 import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Crypto.Wallet as Wallet
 
-import           Cardano.Api.HasTypeProxy
+import           Cardano.Api.Crypto.Ed25519Bip32 (VerKeyDSIGN (..))
 import           Cardano.Api.Hash
+import           Cardano.Api.HasTypeProxy
 import           Cardano.Api.Key
 import           Cardano.Api.KeysShelley
 import           Cardano.Api.SerialiseCBOR
@@ -168,7 +169,8 @@ instance SerialiseAsRawBytes (Hash ByronKey) where
 instance CastVerificationKeyRole ByronKey PaymentExtendedKey where
     castVerificationKey (ByronVerificationKey vk) =
         PaymentExtendedVerificationKey
-          (Byron.unVerificationKey vk)
+          $ VerKeyEd25519Bip32DSIGN
+          $ Byron.unVerificationKey vk
 
 instance CastVerificationKeyRole ByronKey PaymentKey where
     castVerificationKey =

@@ -38,20 +38,18 @@ module Cardano.Api.KeysShelley (
 import           Prelude
 
 import           Data.Aeson.Types (ToJSONKey (..), toJSONKeyText)
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import           Data.Maybe
 import           Data.String (IsString (..))
 
 import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hash.Class as Crypto
-import qualified Cardano.Crypto.Seed as Crypto
 import qualified Cardano.Crypto.Wallet as Crypto.HD
 import qualified Cardano.Ledger.Crypto as Shelley (DSIGN)
 import qualified Cardano.Ledger.Keys as Shelley
 
 import           Cardano.Ledger.Crypto (StandardCrypto)
 
+import           Cardano.Api.Crypto.Ed25519Bip32
 import           Cardano.Api.Hash
 import           Cardano.Api.HasTypeProxy
 import           Cardano.Api.Key
@@ -193,13 +191,15 @@ instance HasTypeProxy PaymentExtendedKey where
 instance Key PaymentExtendedKey where
 
     newtype VerificationKey PaymentExtendedKey =
-        PaymentExtendedVerificationKey Crypto.HD.XPub
+        PaymentExtendedVerificationKey (VerKeyDSIGN Ed25519Bip32DSIGN)
       deriving stock (Eq)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey PaymentExtendedKey)
 
     newtype SigningKey PaymentExtendedKey =
-        PaymentExtendedSigningKey Crypto.HD.XPrv
+        PaymentExtendedSigningKey (SignKeyDSIGN Ed25519Bip32DSIGN)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey PaymentExtendedKey)
 
@@ -207,10 +207,7 @@ instance Key PaymentExtendedKey where
                             -> Crypto.Seed
                             -> SigningKey PaymentExtendedKey
     deterministicSigningKey AsPaymentExtendedKey seed =
-        PaymentExtendedSigningKey
-          (Crypto.HD.generate seedbs BS.empty)
-      where
-       (seedbs, _) = Crypto.getBytesFromSeedT 32 seed
+        PaymentExtendedSigningKey (Crypto.genKeyDSIGN seed)
 
     deterministicSigningKeySeedSize :: AsType PaymentExtendedKey -> Word
     deterministicSigningKeySeedSize AsPaymentExtendedKey = 32
@@ -218,55 +215,33 @@ instance Key PaymentExtendedKey where
     getVerificationKey :: SigningKey PaymentExtendedKey
                        -> VerificationKey PaymentExtendedKey
     getVerificationKey (PaymentExtendedSigningKey sk) =
-        PaymentExtendedVerificationKey (Crypto.HD.toXPub sk)
+        PaymentExtendedVerificationKey (Crypto.deriveVerKeyDSIGN sk)
 
     -- | We use the hash of the normal non-extended pub key so that it is
     -- consistent with the one used in addresses and signatures.
     --
     verificationKeyHash :: VerificationKey PaymentExtendedKey
                         -> Hash PaymentExtendedKey
-    verificationKeyHash (PaymentExtendedVerificationKey vk) =
+    verificationKeyHash (PaymentExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         PaymentExtendedKeyHash
       . Shelley.KeyHash
       . Crypto.castHash
       $ Crypto.hashWith Crypto.HD.xpubPublicKey vk
 
 
-instance ToCBOR (VerificationKey PaymentExtendedKey) where
-    toCBOR (PaymentExtendedVerificationKey xpub) =
-      toCBOR (Crypto.HD.unXPub xpub)
-
-instance FromCBOR (VerificationKey PaymentExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . PaymentExtendedVerificationKey)
-             (Crypto.HD.xpub (bs :: ByteString))
-
-instance ToCBOR (SigningKey PaymentExtendedKey) where
-    toCBOR (PaymentExtendedSigningKey xprv) =
-      toCBOR (Crypto.HD.unXPrv xprv)
-
-instance FromCBOR (SigningKey PaymentExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . PaymentExtendedSigningKey)
-             (Crypto.HD.xprv (bs :: ByteString))
-
 instance SerialiseAsRawBytes (VerificationKey PaymentExtendedKey) where
-    serialiseToRawBytes (PaymentExtendedVerificationKey xpub) =
-      Crypto.HD.unXPub xpub
+    serialiseToRawBytes (PaymentExtendedVerificationKey vk) =
+      Crypto.rawSerialiseVerKeyDSIGN vk
 
     deserialiseFromRawBytes (AsVerificationKey AsPaymentExtendedKey) bs =
-      either (const Nothing) (Just . PaymentExtendedVerificationKey)
-             (Crypto.HD.xpub bs)
+      PaymentExtendedVerificationKey <$> Crypto.rawDeserialiseVerKeyDSIGN bs
 
 instance SerialiseAsRawBytes (SigningKey PaymentExtendedKey) where
-    serialiseToRawBytes (PaymentExtendedSigningKey xprv) =
-      Crypto.HD.unXPrv xprv
+    serialiseToRawBytes (PaymentExtendedSigningKey sk) =
+      Crypto.rawSerialiseSignKeyDSIGN sk
 
     deserialiseFromRawBytes (AsSigningKey AsPaymentExtendedKey) bs =
-      either (const Nothing) (Just . PaymentExtendedSigningKey)
-             (Crypto.HD.xprv bs)
+      PaymentExtendedSigningKey <$> Crypto.rawDeserialiseSignKeyDSIGN bs
 
 instance SerialiseAsBech32 (VerificationKey PaymentExtendedKey) where
     bech32PrefixFor         _ =  "addr_xvk"
@@ -298,7 +273,7 @@ instance HasTextEnvelope (SigningKey PaymentExtendedKey) where
     textEnvelopeType _ = "PaymentExtendedSigningKeyShelley_ed25519_bip32"
 
 instance CastVerificationKeyRole PaymentExtendedKey PaymentKey where
-    castVerificationKey (PaymentExtendedVerificationKey vk) =
+    castVerificationKey (PaymentExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         PaymentVerificationKey
       . Shelley.VKey
       . fromMaybe impossible
@@ -437,13 +412,15 @@ instance HasTypeProxy StakeExtendedKey where
 instance Key StakeExtendedKey where
 
     newtype VerificationKey StakeExtendedKey =
-        StakeExtendedVerificationKey Crypto.HD.XPub
+        StakeExtendedVerificationKey (VerKeyDSIGN Ed25519Bip32DSIGN)
       deriving stock (Eq)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey StakeExtendedKey)
 
     newtype SigningKey StakeExtendedKey =
-        StakeExtendedSigningKey Crypto.HD.XPrv
+        StakeExtendedSigningKey (SignKeyDSIGN Ed25519Bip32DSIGN)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey StakeExtendedKey)
 
@@ -451,10 +428,7 @@ instance Key StakeExtendedKey where
                             -> Crypto.Seed
                             -> SigningKey StakeExtendedKey
     deterministicSigningKey AsStakeExtendedKey seed =
-        StakeExtendedSigningKey
-          (Crypto.HD.generate seedbs BS.empty)
-      where
-       (seedbs, _) = Crypto.getBytesFromSeedT 32 seed
+        StakeExtendedSigningKey (Crypto.genKeyDSIGN seed)
 
     deterministicSigningKeySeedSize :: AsType StakeExtendedKey -> Word
     deterministicSigningKeySeedSize AsStakeExtendedKey = 32
@@ -462,55 +436,33 @@ instance Key StakeExtendedKey where
     getVerificationKey :: SigningKey StakeExtendedKey
                        -> VerificationKey StakeExtendedKey
     getVerificationKey (StakeExtendedSigningKey sk) =
-        StakeExtendedVerificationKey (Crypto.HD.toXPub sk)
+        StakeExtendedVerificationKey (Crypto.deriveVerKeyDSIGN sk)
 
     -- | We use the hash of the normal non-extended pub key so that it is
     -- consistent with the one used in addresses and signatures.
     --
     verificationKeyHash :: VerificationKey StakeExtendedKey
                         -> Hash StakeExtendedKey
-    verificationKeyHash (StakeExtendedVerificationKey vk) =
+    verificationKeyHash (StakeExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         StakeExtendedKeyHash
       . Shelley.KeyHash
       . Crypto.castHash
       $ Crypto.hashWith Crypto.HD.xpubPublicKey vk
 
 
-instance ToCBOR (VerificationKey StakeExtendedKey) where
-    toCBOR (StakeExtendedVerificationKey xpub) =
-      toCBOR (Crypto.HD.unXPub xpub)
-
-instance FromCBOR (VerificationKey StakeExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . StakeExtendedVerificationKey)
-             (Crypto.HD.xpub (bs :: ByteString))
-
-instance ToCBOR (SigningKey StakeExtendedKey) where
-    toCBOR (StakeExtendedSigningKey xprv) =
-      toCBOR (Crypto.HD.unXPrv xprv)
-
-instance FromCBOR (SigningKey StakeExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . StakeExtendedSigningKey)
-             (Crypto.HD.xprv (bs :: ByteString))
-
 instance SerialiseAsRawBytes (VerificationKey StakeExtendedKey) where
-    serialiseToRawBytes (StakeExtendedVerificationKey xpub) =
-      Crypto.HD.unXPub xpub
+    serialiseToRawBytes (StakeExtendedVerificationKey vk) =
+      Crypto.rawSerialiseVerKeyDSIGN vk
 
     deserialiseFromRawBytes (AsVerificationKey AsStakeExtendedKey) bs =
-      either (const Nothing) (Just . StakeExtendedVerificationKey)
-             (Crypto.HD.xpub bs)
+      StakeExtendedVerificationKey <$> Crypto.rawDeserialiseVerKeyDSIGN bs
 
 instance SerialiseAsRawBytes (SigningKey StakeExtendedKey) where
-    serialiseToRawBytes (StakeExtendedSigningKey xprv) =
-      Crypto.HD.unXPrv xprv
+    serialiseToRawBytes (StakeExtendedSigningKey sk) =
+      Crypto.rawSerialiseSignKeyDSIGN sk
 
     deserialiseFromRawBytes (AsSigningKey AsStakeExtendedKey) bs =
-      either (const Nothing) (Just . StakeExtendedSigningKey)
-             (Crypto.HD.xprv bs)
+      StakeExtendedSigningKey <$> Crypto.rawDeserialiseSignKeyDSIGN bs
 
 instance SerialiseAsBech32 (VerificationKey StakeExtendedKey) where
     bech32PrefixFor         _ =  "stake_xvk"
@@ -542,7 +494,7 @@ instance HasTextEnvelope (SigningKey StakeExtendedKey) where
     textEnvelopeType _ = "StakeExtendedSigningKeyShelley_ed25519_bip32"
 
 instance CastVerificationKeyRole StakeExtendedKey StakeKey where
-    castVerificationKey (StakeExtendedVerificationKey vk) =
+    castVerificationKey (StakeExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         StakeVerificationKey
       . Shelley.VKey
       . fromMaybe impossible
@@ -670,13 +622,15 @@ instance HasTypeProxy GenesisExtendedKey where
 instance Key GenesisExtendedKey where
 
     newtype VerificationKey GenesisExtendedKey =
-        GenesisExtendedVerificationKey Crypto.HD.XPub
+        GenesisExtendedVerificationKey (VerKeyDSIGN Ed25519Bip32DSIGN)
       deriving stock (Eq)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey GenesisExtendedKey)
 
     newtype SigningKey GenesisExtendedKey =
-        GenesisExtendedSigningKey Crypto.HD.XPrv
+        GenesisExtendedSigningKey (SignKeyDSIGN Ed25519Bip32DSIGN)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey GenesisExtendedKey)
 
@@ -684,10 +638,7 @@ instance Key GenesisExtendedKey where
                             -> Crypto.Seed
                             -> SigningKey GenesisExtendedKey
     deterministicSigningKey AsGenesisExtendedKey seed =
-        GenesisExtendedSigningKey
-          (Crypto.HD.generate seedbs BS.empty)
-      where
-       (seedbs, _) = Crypto.getBytesFromSeedT 32 seed
+        GenesisExtendedSigningKey (Crypto.genKeyDSIGN seed)
 
     deterministicSigningKeySeedSize :: AsType GenesisExtendedKey -> Word
     deterministicSigningKeySeedSize AsGenesisExtendedKey = 32
@@ -695,55 +646,33 @@ instance Key GenesisExtendedKey where
     getVerificationKey :: SigningKey GenesisExtendedKey
                        -> VerificationKey GenesisExtendedKey
     getVerificationKey (GenesisExtendedSigningKey sk) =
-        GenesisExtendedVerificationKey (Crypto.HD.toXPub sk)
+        GenesisExtendedVerificationKey (Crypto.deriveVerKeyDSIGN sk)
 
     -- | We use the hash of the normal non-extended pub key so that it is
     -- consistent with the one used in addresses and signatures.
     --
     verificationKeyHash :: VerificationKey GenesisExtendedKey
                         -> Hash GenesisExtendedKey
-    verificationKeyHash (GenesisExtendedVerificationKey vk) =
+    verificationKeyHash (GenesisExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         GenesisExtendedKeyHash
       . Shelley.KeyHash
       . Crypto.castHash
       $ Crypto.hashWith Crypto.HD.xpubPublicKey vk
 
 
-instance ToCBOR (VerificationKey GenesisExtendedKey) where
-    toCBOR (GenesisExtendedVerificationKey xpub) =
-      toCBOR (Crypto.HD.unXPub xpub)
-
-instance FromCBOR (VerificationKey GenesisExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . GenesisExtendedVerificationKey)
-             (Crypto.HD.xpub (bs :: ByteString))
-
-instance ToCBOR (SigningKey GenesisExtendedKey) where
-    toCBOR (GenesisExtendedSigningKey xprv) =
-      toCBOR (Crypto.HD.unXPrv xprv)
-
-instance FromCBOR (SigningKey GenesisExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . GenesisExtendedSigningKey)
-             (Crypto.HD.xprv (bs :: ByteString))
-
 instance SerialiseAsRawBytes (VerificationKey GenesisExtendedKey) where
-    serialiseToRawBytes (GenesisExtendedVerificationKey xpub) =
-      Crypto.HD.unXPub xpub
+    serialiseToRawBytes (GenesisExtendedVerificationKey vk) =
+      Crypto.rawSerialiseVerKeyDSIGN vk
 
     deserialiseFromRawBytes (AsVerificationKey AsGenesisExtendedKey) bs =
-      either (const Nothing) (Just . GenesisExtendedVerificationKey)
-             (Crypto.HD.xpub bs)
+      GenesisExtendedVerificationKey <$> Crypto.rawDeserialiseVerKeyDSIGN bs
 
 instance SerialiseAsRawBytes (SigningKey GenesisExtendedKey) where
-    serialiseToRawBytes (GenesisExtendedSigningKey xprv) =
-      Crypto.HD.unXPrv xprv
+    serialiseToRawBytes (GenesisExtendedSigningKey sk) =
+      Crypto.rawSerialiseSignKeyDSIGN sk
 
     deserialiseFromRawBytes (AsSigningKey AsGenesisExtendedKey) bs =
-      either (const Nothing) (Just . GenesisExtendedSigningKey)
-             (Crypto.HD.xprv bs)
+      GenesisExtendedSigningKey <$> Crypto.rawDeserialiseSignKeyDSIGN bs
 
 
 newtype instance Hash GenesisExtendedKey =
@@ -767,7 +696,7 @@ instance HasTextEnvelope (SigningKey GenesisExtendedKey) where
     textEnvelopeType _ = "GenesisExtendedSigningKey_ed25519_bip32"
 
 instance CastVerificationKeyRole GenesisExtendedKey GenesisKey where
-    castVerificationKey (GenesisExtendedVerificationKey vk) =
+    castVerificationKey (GenesisExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         GenesisVerificationKey
       . Shelley.VKey
       . fromMaybe impossible
@@ -904,13 +833,15 @@ instance HasTypeProxy GenesisDelegateExtendedKey where
 instance Key GenesisDelegateExtendedKey where
 
     newtype VerificationKey GenesisDelegateExtendedKey =
-        GenesisDelegateExtendedVerificationKey Crypto.HD.XPub
+        GenesisDelegateExtendedVerificationKey (VerKeyDSIGN Ed25519Bip32DSIGN)
       deriving stock (Eq)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey GenesisDelegateExtendedKey)
 
     newtype SigningKey GenesisDelegateExtendedKey =
-        GenesisDelegateExtendedSigningKey Crypto.HD.XPrv
+        GenesisDelegateExtendedSigningKey (SignKeyDSIGN Ed25519Bip32DSIGN)
+      deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey GenesisDelegateExtendedKey)
 
@@ -918,10 +849,7 @@ instance Key GenesisDelegateExtendedKey where
                             -> Crypto.Seed
                             -> SigningKey GenesisDelegateExtendedKey
     deterministicSigningKey AsGenesisDelegateExtendedKey seed =
-        GenesisDelegateExtendedSigningKey
-          (Crypto.HD.generate seedbs BS.empty)
-      where
-       (seedbs, _) = Crypto.getBytesFromSeedT 32 seed
+        GenesisDelegateExtendedSigningKey (Crypto.genKeyDSIGN seed)
 
     deterministicSigningKeySeedSize :: AsType GenesisDelegateExtendedKey -> Word
     deterministicSigningKeySeedSize AsGenesisDelegateExtendedKey = 32
@@ -929,55 +857,33 @@ instance Key GenesisDelegateExtendedKey where
     getVerificationKey :: SigningKey GenesisDelegateExtendedKey
                        -> VerificationKey GenesisDelegateExtendedKey
     getVerificationKey (GenesisDelegateExtendedSigningKey sk) =
-        GenesisDelegateExtendedVerificationKey (Crypto.HD.toXPub sk)
+        GenesisDelegateExtendedVerificationKey (Crypto.deriveVerKeyDSIGN sk)
 
     -- | We use the hash of the normal non-extended pub key so that it is
     -- consistent with the one used in addresses and signatures.
     --
     verificationKeyHash :: VerificationKey GenesisDelegateExtendedKey
                         -> Hash GenesisDelegateExtendedKey
-    verificationKeyHash (GenesisDelegateExtendedVerificationKey vk) =
+    verificationKeyHash (GenesisDelegateExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         GenesisDelegateExtendedKeyHash
       . Shelley.KeyHash
       . Crypto.castHash
       $ Crypto.hashWith Crypto.HD.xpubPublicKey vk
 
 
-instance ToCBOR (VerificationKey GenesisDelegateExtendedKey) where
-    toCBOR (GenesisDelegateExtendedVerificationKey xpub) =
-      toCBOR (Crypto.HD.unXPub xpub)
-
-instance FromCBOR (VerificationKey GenesisDelegateExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . GenesisDelegateExtendedVerificationKey)
-             (Crypto.HD.xpub (bs :: ByteString))
-
-instance ToCBOR (SigningKey GenesisDelegateExtendedKey) where
-    toCBOR (GenesisDelegateExtendedSigningKey xprv) =
-      toCBOR (Crypto.HD.unXPrv xprv)
-
-instance FromCBOR (SigningKey GenesisDelegateExtendedKey) where
-    fromCBOR = do
-      bs <- fromCBOR
-      either fail (return . GenesisDelegateExtendedSigningKey)
-             (Crypto.HD.xprv (bs :: ByteString))
-
 instance SerialiseAsRawBytes (VerificationKey GenesisDelegateExtendedKey) where
-    serialiseToRawBytes (GenesisDelegateExtendedVerificationKey xpub) =
-      Crypto.HD.unXPub xpub
+    serialiseToRawBytes (GenesisDelegateExtendedVerificationKey vk) =
+      Crypto.rawSerialiseVerKeyDSIGN vk
 
     deserialiseFromRawBytes (AsVerificationKey AsGenesisDelegateExtendedKey) bs =
-      either (const Nothing) (Just . GenesisDelegateExtendedVerificationKey)
-             (Crypto.HD.xpub bs)
+      GenesisDelegateExtendedVerificationKey <$> Crypto.rawDeserialiseVerKeyDSIGN bs
 
 instance SerialiseAsRawBytes (SigningKey GenesisDelegateExtendedKey) where
-    serialiseToRawBytes (GenesisDelegateExtendedSigningKey xprv) =
-      Crypto.HD.unXPrv xprv
+    serialiseToRawBytes (GenesisDelegateExtendedSigningKey sk) =
+      Crypto.rawSerialiseSignKeyDSIGN sk
 
     deserialiseFromRawBytes (AsSigningKey AsGenesisDelegateExtendedKey) bs =
-      either (const Nothing) (Just . GenesisDelegateExtendedSigningKey)
-             (Crypto.HD.xprv bs)
+      GenesisDelegateExtendedSigningKey <$> Crypto.rawDeserialiseSignKeyDSIGN bs
 
 
 newtype instance Hash GenesisDelegateExtendedKey =
@@ -1001,7 +907,7 @@ instance HasTextEnvelope (SigningKey GenesisDelegateExtendedKey) where
     textEnvelopeType _ = "GenesisDelegateExtendedSigningKey_ed25519_bip32"
 
 instance CastVerificationKeyRole GenesisDelegateExtendedKey GenesisDelegateKey where
-    castVerificationKey (GenesisDelegateExtendedVerificationKey vk) =
+    castVerificationKey (GenesisDelegateExtendedVerificationKey (VerKeyEd25519Bip32DSIGN vk)) =
         GenesisDelegateVerificationKey
       . Shelley.VKey
       . fromMaybe impossible
@@ -1218,4 +1124,3 @@ instance HasTextEnvelope (SigningKey StakePoolKey) where
       where
         proxy :: Proxy (Shelley.DSIGN StandardCrypto)
         proxy = Proxy
-
