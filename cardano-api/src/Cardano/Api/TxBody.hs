@@ -24,6 +24,7 @@ module Cardano.Api.TxBody (
     -- * Transaction bodies
     TxBody(.., TxBody),
     makeTransactionBody,
+    unsafeMakeShelleyTransactionBody,
     TxBodyContent(..),
     TxBodyError(..),
     TxBodyScriptData(..),
@@ -1833,10 +1834,11 @@ getByronTxBodyContent (Annotated Byron.UnsafeTx{txInputs, txOutputs} _) =
       txMintValue      = TxMintNone
     }
 
-makeShelleyTransactionBody :: ShelleyBasedEra era
+-- | Create a Shelly era transaction body without performing any validity checks
+unsafeMakeShelleyTransactionBody :: ShelleyBasedEra era
                            -> TxBodyContent BuildTx era
-                           -> Either (TxBodyError era) (TxBody era)
-makeShelleyTransactionBody era@ShelleyBasedEraShelley
+                           -> TxBody era
+unsafeMakeShelleyTransactionBody era@ShelleyBasedEraShelley
                            txbodycontent@TxBodyContent {
                              txIns,
                              txOuts,
@@ -1846,43 +1848,31 @@ makeShelleyTransactionBody era@ShelleyBasedEraShelley
                              txWithdrawals,
                              txCertificates,
                              txUpdateProposal
-                           } = do
-
-    guard (not (null txIns)) ?! TxBodyEmptyTxIns
-    sequence_
-      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
-           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
-      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
-      , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInShelleyEra v) _) <- txOuts ]
-    case txMetadata of
-      TxMetadataNone      -> return ()
-      TxMetadataInEra _ m -> first TxBodyMetadataError (validateTxMetadata m)
-
-    return $
-      ShelleyTxBody era
-        (Shelley.TxBody
-          (Set.fromList (map (toShelleyTxIn . fst) txIns))
-          (Seq.fromList (map (toShelleyTxOut era) txOuts))
-          (case txCertificates of
-             TxCertificatesNone    -> Seq.empty
-             TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
-          (case txWithdrawals of
-             TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
-             TxWithdrawals _ ws -> toShelleyWithdrawal ws)
-          (case txFee of
-             TxFeeImplicit era'  -> case era' of {}
-             TxFeeExplicit _ fee -> toShelleyLovelace fee)
-          (case upperBound of
-             TxValidityNoUpperBound era' -> case era' of {}
-             TxValidityUpperBound _ ttl  -> ttl)
-          (case txUpdateProposal of
-             TxUpdateProposalNone -> SNothing
-             TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
-          (maybeToStrictMaybe
-            (Ledger.hashAuxiliaryData @StandardShelley <$> txAuxData)))
-        scripts
-        TxBodyNoScriptData
-        txAuxData
+                           } =
+  ShelleyTxBody era
+    (Shelley.TxBody
+      (Set.fromList (map (toShelleyTxIn . fst) txIns))
+      (Seq.fromList (map (toShelleyTxOut era) txOuts))
+      (case txCertificates of
+          TxCertificatesNone    -> Seq.empty
+          TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
+      (case txWithdrawals of
+          TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
+          TxWithdrawals _ ws -> toShelleyWithdrawal ws)
+      (case txFee of
+          TxFeeImplicit era'  -> case era' of {}
+          TxFeeExplicit _ fee -> toShelleyLovelace fee)
+      (case upperBound of
+          TxValidityNoUpperBound era' -> case era' of {}
+          TxValidityUpperBound _ ttl  -> ttl)
+      (case txUpdateProposal of
+          TxUpdateProposalNone -> SNothing
+          TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
+      (maybeToStrictMaybe
+        (Ledger.hashAuxiliaryData @StandardShelley <$> txAuxData)))
+    scripts
+    TxBodyNoScriptData
+    txAuxData
   where
     scripts :: [Ledger.Script StandardShelley]
     scripts =
@@ -1900,7 +1890,7 @@ makeShelleyTransactionBody era@ShelleyBasedEraShelley
                TxMetadataNone                     -> Map.empty
                TxMetadataInEra _ (TxMetadata ms') -> ms'
 
-makeShelleyTransactionBody era@ShelleyBasedEraAllegra
+unsafeMakeShelleyTransactionBody era@ShelleyBasedEraAllegra
                            txbodycontent@TxBodyContent {
                              txIns,
                              txOuts,
@@ -1911,50 +1901,37 @@ makeShelleyTransactionBody era@ShelleyBasedEraAllegra
                              txWithdrawals,
                              txCertificates,
                              txUpdateProposal
-                           } = do
-
-    guard (not (null txIns)) ?! TxBodyEmptyTxIns
-    sequence_
-      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
-           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
-      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
-      , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInAllegraEra v) _) <- txOuts
-      ]
-    case txMetadata of
-      TxMetadataNone      -> return ()
-      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
-
-    return $
-      ShelleyTxBody era
-        (Allegra.TxBody
-          (Set.fromList (map (toShelleyTxIn . fst) txIns))
-          (Seq.fromList (map (toShelleyTxOut era) txOuts))
-          (case txCertificates of
-             TxCertificatesNone    -> Seq.empty
-             TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
-          (case txWithdrawals of
-             TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
-             TxWithdrawals _ ws -> toShelleyWithdrawal ws)
-          (case txFee of
-             TxFeeImplicit era'  -> case era' of {}
-             TxFeeExplicit _ fee -> toShelleyLovelace fee)
-          (Allegra.ValidityInterval {
-             invalidBefore    = case lowerBound of
-                                          TxValidityNoLowerBound   -> SNothing
-                                          TxValidityLowerBound _ s -> SJust s,
-             invalidHereafter = case upperBound of
-                                          TxValidityNoUpperBound _ -> SNothing
-                                          TxValidityUpperBound _ s -> SJust s
-           })
-          (case txUpdateProposal of
-             TxUpdateProposalNone -> SNothing
-             TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
-          (maybeToStrictMaybe
-            (Ledger.hashAuxiliaryData @StandardAllegra <$> txAuxData))
-          mempty) -- No minting in Allegra, only Mary
-        scripts
-        TxBodyNoScriptData
-        txAuxData
+                           } =
+  ShelleyTxBody era
+    (Allegra.TxBody
+      (Set.fromList (map (toShelleyTxIn . fst) txIns))
+      (Seq.fromList (map (toShelleyTxOut era) txOuts))
+      (case txCertificates of
+          TxCertificatesNone    -> Seq.empty
+          TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
+      (case txWithdrawals of
+          TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
+          TxWithdrawals _ ws -> toShelleyWithdrawal ws)
+      (case txFee of
+          TxFeeImplicit era'  -> case era' of {}
+          TxFeeExplicit _ fee -> toShelleyLovelace fee)
+      (Allegra.ValidityInterval {
+          invalidBefore    = case lowerBound of
+                                      TxValidityNoLowerBound   -> SNothing
+                                      TxValidityLowerBound _ s -> SJust s,
+          invalidHereafter = case upperBound of
+                                      TxValidityNoUpperBound _ -> SNothing
+                                      TxValidityUpperBound _ s -> SJust s
+        })
+      (case txUpdateProposal of
+          TxUpdateProposalNone -> SNothing
+          TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
+      (maybeToStrictMaybe
+        (Ledger.hashAuxiliaryData @StandardAllegra <$> txAuxData))
+      mempty) -- No minting in Allegra, only Mary
+    scripts
+    TxBodyNoScriptData
+    txAuxData
   where
     scripts :: [Ledger.Script StandardAllegra]
     scripts =
@@ -1976,7 +1953,7 @@ makeShelleyTransactionBody era@ShelleyBasedEraAllegra
                TxAuxScriptsNone   -> []
                TxAuxScripts _ ss' -> ss'
 
-makeShelleyTransactionBody era@ShelleyBasedEraMary
+unsafeMakeShelleyTransactionBody era@ShelleyBasedEraMary
                            txbodycontent@TxBodyContent {
                              txIns,
                              txOuts,
@@ -1988,61 +1965,39 @@ makeShelleyTransactionBody era@ShelleyBasedEraMary
                              txCertificates,
                              txUpdateProposal,
                              txMintValue
-                           } = do
-
-    guard (not (null txIns)) ?! TxBodyEmptyTxIns
-    sequence_
-      [ do allPositive
-           allWithinMaxBound
-      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Quantity
-      , txout@(TxOut _ (TxOutValue MultiAssetInMaryEra v) _) <- txOuts
-      , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
-                                  []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputNegative q txout)
-            allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
-                                  []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputOverflow q txout)
-      ]
-    case txMetadata of
-      TxMetadataNone      -> return ()
-      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
-    case txMintValue of
-      TxMintNone        -> return ()
-      TxMintValue _ v _ -> guard (selectLovelace v == 0) ?! TxBodyMintAdaError
-
-    return $
-      ShelleyTxBody era
-        (Allegra.TxBody
-          (Set.fromList (map (toShelleyTxIn . fst) txIns))
-          (Seq.fromList (map (toShelleyTxOut era) txOuts))
-          (case txCertificates of
-             TxCertificatesNone    -> Seq.empty
-             TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
-          (case txWithdrawals of
-             TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
-             TxWithdrawals _ ws -> toShelleyWithdrawal ws)
-          (case txFee of
-             TxFeeImplicit era'  -> case era' of {}
-             TxFeeExplicit _ fee -> toShelleyLovelace fee)
-          (Allegra.ValidityInterval {
-             invalidBefore    = case lowerBound of
-                                          TxValidityNoLowerBound   -> SNothing
-                                          TxValidityLowerBound _ s -> SJust s,
-             invalidHereafter = case upperBound of
-                                          TxValidityNoUpperBound _ -> SNothing
-                                          TxValidityUpperBound _ s -> SJust s
-           })
-          (case txUpdateProposal of
-             TxUpdateProposalNone -> SNothing
-             TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
-          (maybeToStrictMaybe
-            (Ledger.hashAuxiliaryData @StandardMary <$> txAuxData))
-          (case txMintValue of
-             TxMintNone        -> mempty
-             TxMintValue _ v _ -> toMaryValue v))
-        scripts
-        TxBodyNoScriptData
-        txAuxData
+                           } =
+  ShelleyTxBody era
+    (Allegra.TxBody
+      (Set.fromList (map (toShelleyTxIn . fst) txIns))
+      (Seq.fromList (map (toShelleyTxOut era) txOuts))
+      (case txCertificates of
+          TxCertificatesNone    -> Seq.empty
+          TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
+      (case txWithdrawals of
+          TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
+          TxWithdrawals _ ws -> toShelleyWithdrawal ws)
+      (case txFee of
+          TxFeeImplicit era'  -> case era' of {}
+          TxFeeExplicit _ fee -> toShelleyLovelace fee)
+      (Allegra.ValidityInterval {
+          invalidBefore    = case lowerBound of
+                                      TxValidityNoLowerBound   -> SNothing
+                                      TxValidityLowerBound _ s -> SJust s,
+          invalidHereafter = case upperBound of
+                                      TxValidityNoUpperBound _ -> SNothing
+                                      TxValidityUpperBound _ s -> SJust s
+        })
+      (case txUpdateProposal of
+          TxUpdateProposalNone -> SNothing
+          TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
+      (maybeToStrictMaybe
+        (Ledger.hashAuxiliaryData @StandardMary <$> txAuxData))
+      (case txMintValue of
+          TxMintNone        -> mempty
+          TxMintValue _ v _ -> toMaryValue v))
+    scripts
+    TxBodyNoScriptData
+    txAuxData
   where
     scripts :: [Ledger.Script StandardMary]
     scripts =
@@ -2064,7 +2019,7 @@ makeShelleyTransactionBody era@ShelleyBasedEraMary
                TxAuxScriptsNone   -> []
                TxAuxScripts _ ss' -> ss'
 
-makeShelleyTransactionBody era@ShelleyBasedEraAlonzo
+unsafeMakeShelleyTransactionBody era@ShelleyBasedEraAlonzo
                            txbodycontent@TxBodyContent {
                              txIns,
                              txInsCollateral,
@@ -2080,87 +2035,56 @@ makeShelleyTransactionBody era@ShelleyBasedEraAlonzo
                              txCertificates,
                              txUpdateProposal,
                              txMintValue
-                           } = do
-
-    guard (not (null txIns)) ?! TxBodyEmptyTxIns
-    sequence_
-      [ do allPositive
-           allWithinMaxBound
-      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Quantity
-      , txout@(TxOut _ (TxOutValue MultiAssetInAlonzoEra v) _) <- txOuts
-      , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
-                                  []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputNegative q txout)
-            allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
-                                  []  -> Right ()
-                                  q:_ -> Left (TxBodyOutputOverflow q txout)
-      ]
-    case txMetadata of
-      TxMetadataNone      -> return ()
-      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
-    case txMintValue of
-      TxMintNone        -> return ()
-      TxMintValue _ v _ -> guard (selectLovelace v == 0) ?! TxBodyMintAdaError
-    case txInsCollateral of
-      TxInsCollateralNone | not (Set.null languages)
-        -> Left TxBodyEmptyTxInsCollateral
-      _ -> return ()
-    case txProtocolParams of
-      BuildTxWith Nothing | not (Set.null languages)
-        -> Left TxBodyMissingProtocolParams
-      _ -> return () --TODO alonzo: validate protocol params for the Alonzo era.
-                     --             All the necessary params must be provided.
-
-    return $
-      ShelleyTxBody era
-        (Alonzo.TxBody
-          (Set.fromList (map (toShelleyTxIn . fst) txIns))
-          (case txInsCollateral of
-             TxInsCollateralNone     -> Set.empty
-             TxInsCollateral _ txins -> Set.fromList (map toShelleyTxIn txins))
-          (Seq.fromList (map (toShelleyTxOut era) txOuts))
-          (case txCertificates of
-             TxCertificatesNone    -> Seq.empty
-             TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
-          (case txWithdrawals of
-             TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
-             TxWithdrawals _ ws -> toShelleyWithdrawal ws)
-          (case txFee of
-             TxFeeImplicit era'  -> case era' of {}
-             TxFeeExplicit _ fee -> toShelleyLovelace fee)
-          (Allegra.ValidityInterval {
-             invalidBefore    = case lowerBound of
-                                          TxValidityNoLowerBound   -> SNothing
-                                          TxValidityLowerBound _ s -> SJust s,
-             invalidHereafter = case upperBound of
-                                          TxValidityNoUpperBound _ -> SNothing
-                                          TxValidityUpperBound _ s -> SJust s
-           })
-          (case txUpdateProposal of
-             TxUpdateProposalNone -> SNothing
-             TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
-          (case txExtraKeyWits of
-             TxExtraKeyWitnessesNone   -> Set.empty
-             TxExtraKeyWitnesses _ khs -> Set.fromList
-                                            [ Shelley.coerceKeyRole kh
-                                            | PaymentKeyHash kh <- khs ])
-          (case txMintValue of
-             TxMintNone        -> mempty
-             TxMintValue _ v _ -> toMaryValue v)
-          (case txProtocolParams of
-             BuildTxWith Nothing        -> SNothing
-             BuildTxWith (Just pparams) ->
-               Alonzo.hashWitnessPPData
-                 (toLedgerPParams ShelleyBasedEraAlonzo pparams)
-                 languages
-                 redeemers
-                 datums)
-          (maybeToStrictMaybe
-            (Ledger.hashAuxiliaryData @StandardAlonzo <$> txAuxData))
-          SNothing) -- TODO alonzo: support optional network id in TxBodyContent
-        scripts
-        (TxBodyScriptData ScriptDataInAlonzoEra datums redeemers)
-        txAuxData
+                           } =
+  ShelleyTxBody era
+    (Alonzo.TxBody
+      (Set.fromList (map (toShelleyTxIn . fst) txIns))
+      (case txInsCollateral of
+          TxInsCollateralNone     -> Set.empty
+          TxInsCollateral _ txins -> Set.fromList (map toShelleyTxIn txins))
+      (Seq.fromList (map (toShelleyTxOut era) txOuts))
+      (case txCertificates of
+          TxCertificatesNone    -> Seq.empty
+          TxCertificates _ cs _ -> Seq.fromList (map toShelleyCertificate cs))
+      (case txWithdrawals of
+          TxWithdrawalsNone  -> Shelley.Wdrl Map.empty
+          TxWithdrawals _ ws -> toShelleyWithdrawal ws)
+      (case txFee of
+          TxFeeImplicit era'  -> case era' of {}
+          TxFeeExplicit _ fee -> toShelleyLovelace fee)
+      (Allegra.ValidityInterval {
+          invalidBefore    = case lowerBound of
+                                      TxValidityNoLowerBound   -> SNothing
+                                      TxValidityLowerBound _ s -> SJust s,
+          invalidHereafter = case upperBound of
+                                      TxValidityNoUpperBound _ -> SNothing
+                                      TxValidityUpperBound _ s -> SJust s
+        })
+      (case txUpdateProposal of
+          TxUpdateProposalNone -> SNothing
+          TxUpdateProposal _ p -> SJust (toLedgerUpdate era p))
+      (case txExtraKeyWits of
+          TxExtraKeyWitnessesNone   -> Set.empty
+          TxExtraKeyWitnesses _ khs -> Set.fromList
+                                        [ Shelley.coerceKeyRole kh
+                                        | PaymentKeyHash kh <- khs ])
+      (case txMintValue of
+          TxMintNone        -> mempty
+          TxMintValue _ v _ -> toMaryValue v)
+      (case txProtocolParams of
+          BuildTxWith Nothing        -> SNothing
+          BuildTxWith (Just pparams) ->
+            Alonzo.hashWitnessPPData
+              (toLedgerPParams ShelleyBasedEraAlonzo pparams)
+              languages
+              redeemers
+              datums)
+      (maybeToStrictMaybe
+        (Ledger.hashAuxiliaryData @StandardAlonzo <$> txAuxData))
+      SNothing) -- TODO alonzo: support optional network id in TxBodyContent
+    scripts
+    (TxBodyScriptData ScriptDataInAlonzoEra datums redeemers)
+    txAuxData
   where
     witnesses :: [(ScriptWitnessIndex, AnyScriptWitness AlonzoEra)]
     witnesses = collectTxBodyScriptWitnesses txbodycontent
@@ -2216,6 +2140,131 @@ makeShelleyTransactionBody era@ShelleyBasedEraAlonzo
         ss = case txAuxScripts of
                TxAuxScriptsNone   -> []
                TxAuxScripts _ ss' -> ss'
+
+
+makeShelleyTransactionBody :: ShelleyBasedEra era
+                           -> TxBodyContent BuildTx era
+                           -> Either (TxBodyError era) (TxBody era)
+makeShelleyTransactionBody era@ShelleyBasedEraShelley
+                           txbodycontent@TxBodyContent {
+                             txIns,
+                             txOuts,
+                             txMetadata
+                           } = do
+
+    guard (not (null txIns)) ?! TxBodyEmptyTxIns
+    sequence_
+      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
+           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
+      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
+      , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInShelleyEra v) _) <- txOuts ]
+    case txMetadata of
+      TxMetadataNone      -> return ()
+      TxMetadataInEra _ m -> first TxBodyMetadataError (validateTxMetadata m)
+
+    pure (unsafeMakeShelleyTransactionBody era txbodycontent)
+
+makeShelleyTransactionBody era@ShelleyBasedEraAllegra
+                           txbodycontent@TxBodyContent {
+                             txIns,
+                             txOuts,
+                             txMetadata
+                           } = do
+
+    guard (not (null txIns)) ?! TxBodyEmptyTxIns
+    sequence_
+      [ do guard (v >= 0) ?! TxBodyOutputNegative (lovelaceToQuantity v) txout
+           guard (v <= maxTxOut) ?! TxBodyOutputOverflow (lovelaceToQuantity v) txout
+      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Lovelace
+      , txout@(TxOut _ (TxOutAdaOnly AdaOnlyInAllegraEra v) _) <- txOuts
+      ]
+    case txMetadata of
+      TxMetadataNone      -> return ()
+      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
+
+    pure (unsafeMakeShelleyTransactionBody era txbodycontent)
+
+makeShelleyTransactionBody era@ShelleyBasedEraMary
+                           txbodycontent@TxBodyContent {
+                             txIns,
+                             txOuts,
+                             txMetadata,
+                             txMintValue
+                           } = do
+
+    guard (not (null txIns)) ?! TxBodyEmptyTxIns
+    sequence_
+      [ do allPositive
+           allWithinMaxBound
+      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Quantity
+      , txout@(TxOut _ (TxOutValue MultiAssetInMaryEra v) _) <- txOuts
+      , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
+                                  []  -> Right ()
+                                  q:_ -> Left (TxBodyOutputNegative q txout)
+            allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
+                                  []  -> Right ()
+                                  q:_ -> Left (TxBodyOutputOverflow q txout)
+      ]
+    case txMetadata of
+      TxMetadataNone      -> return ()
+      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
+    case txMintValue of
+      TxMintNone        -> return ()
+      TxMintValue _ v _ -> guard (selectLovelace v == 0) ?! TxBodyMintAdaError
+
+    pure (unsafeMakeShelleyTransactionBody era txbodycontent)
+
+makeShelleyTransactionBody era@ShelleyBasedEraAlonzo
+                           txbodycontent@TxBodyContent {
+                             txIns,
+                             txInsCollateral,
+                             txOuts,
+                             txMetadata,
+                             txProtocolParams,
+                             txMintValue
+                           } = do
+
+    guard (not (null txIns)) ?! TxBodyEmptyTxIns
+    sequence_
+      [ do allPositive
+           allWithinMaxBound
+      | let maxTxOut = fromIntegral (maxBound :: Word64) :: Quantity
+      , txout@(TxOut _ (TxOutValue MultiAssetInAlonzoEra v) _) <- txOuts
+      , let allPositive       = case [ q | (_,q) <- valueToList v, q < 0 ] of
+                                  []  -> Right ()
+                                  q:_ -> Left (TxBodyOutputNegative q txout)
+            allWithinMaxBound = case [ q | (_,q) <- valueToList v, q > maxTxOut ] of
+                                  []  -> Right ()
+                                  q:_ -> Left (TxBodyOutputOverflow q txout)
+      ]
+    case txMetadata of
+      TxMetadataNone      -> return ()
+      TxMetadataInEra _ m -> validateTxMetadata m ?!. TxBodyMetadataError
+    case txMintValue of
+      TxMintNone        -> return ()
+      TxMintValue _ v _ -> guard (selectLovelace v == 0) ?! TxBodyMintAdaError
+    case txInsCollateral of
+      TxInsCollateralNone | not (Set.null languages)
+        -> Left TxBodyEmptyTxInsCollateral
+      _ -> return ()
+    case txProtocolParams of
+      BuildTxWith Nothing | not (Set.null languages)
+        -> Left TxBodyMissingProtocolParams
+      _ -> return () --TODO alonzo: validate protocol params for the Alonzo era.
+                     --             All the necessary params must be provided.
+
+    pure (unsafeMakeShelleyTransactionBody era txbodycontent)
+  where
+    witnesses :: [(ScriptWitnessIndex, AnyScriptWitness AlonzoEra)]
+    witnesses = collectTxBodyScriptWitnesses txbodycontent
+
+    languages :: Set Alonzo.Language
+    languages =
+      Set.fromList
+        [ toAlonzoLanguage (AnyPlutusScriptVersion v)
+        | (_, AnyScriptWitness (PlutusScriptWitness _ v _ _ _ _)) <- witnesses
+        ]
+
 
 
 -- ----------------------------------------------------------------------------
