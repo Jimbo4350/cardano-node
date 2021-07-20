@@ -15,7 +15,7 @@ import           Cardano.Tracing.Config (TraceOptions (..))
 import           Ouroboros.Network.Block (MaxSlotNo (..), SlotNo (..))
 import           Ouroboros.Network.NodeToNode (DiffusionMode (InitiatorAndResponderDiffusionMode))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (SnapshotInterval (..))
-import           Ouroboros.Consensus.Node (NetworkP2PMode (..))
+import qualified Ouroboros.Consensus.Node as Consensus ( NetworkP2PMode (..) )
 
 import           Hedgehog (Property, discover, withTests, (===))
 import qualified Hedgehog
@@ -141,7 +141,7 @@ expectedConfig =
     , ncTargetNumberOfKnownPeers = 5
     , ncTargetNumberOfEstablishedPeers = 2
     , ncTargetNumberOfActivePeers = 1
-    , ncEnableP2P = DisabledP2PMode
+    , ncEnableP2P = SomeNetworkP2PMode Consensus.DisabledP2PMode
     }
 
 -- -----------------------------------------------------------------------------
