@@ -57,8 +57,8 @@ cardano-cli transaction build-raw \
             --mary-era \
             --fee 0 \
             --tx-in $TXIN \
-            --tx-out $ADDR + 5 $POLICYID.couttscoin\
-            --mint 5 $POLICYID.yourassetname \
+            --tx-out "$ADDR + 5 $POLICYID.couttscoin" \
+            --mint "5 $POLICYID.yourassetname" \
             --minting-script-file $SCRIPT \
             --out-file txbody
 ```

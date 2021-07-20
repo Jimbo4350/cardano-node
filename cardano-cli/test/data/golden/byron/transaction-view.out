@@ -1,0 +1,8 @@
+era: Byron
+fee: implicit
+inputs:
+- f8ec302d19e3c8251c30b1434349bf2e949a1dbf14a4ebc3d512918d2d4d5c56#88
+outputs:
+- address: 82d818582683581ca862330fecc26edce11f2dce0b3713158d30d1f77141635adb7d2600a102431907e5001a11cea676
+  address era: Byron
+  amount: 68 Lovelace

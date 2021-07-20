@@ -1,18 +1,22 @@
-auxiliary data: null
-certificates: []
+certificates: null
 era: Shelley
-fee: 32
+fee: 32 Lovelace
 inputs:
 - fe5dd07fb576bff960d6e066eade5b26cdb5afebe29f76ea58d0a098bce5d891#29
-metadata hash: null
+metadata: null
 outputs:
-- address:
-    Bech32: addr1v9wmu83pzajplrtpsq6tsqdgwr98x888trpmah2u0ezznsge7del3
-    credential:
-      key hash: 5dbe1e2117641f8d618034b801a870ca731ce758c3bedd5c7e4429c1
-    network: Mainnet
-    stake reference: StakeRefNull
-  amount: 31
+- address: addr_test1vz7w0r9epak6nmnh3mc8e2ypkjyu8zsc3xf7dpct6k577acxmcfyv
+  address era: Shelley
+  amount: 31 Lovelace
+  network: Testnet
+  payment credential:
+    key hash: bce78cb90f6da9ee778ef07ca881b489c38a188993e6870bd5a9ef77
+  stake reference: null
 time to live: 33
-update: null
-withdrawals: []
+update proposal: null
+withdrawals:
+- address: stake_test1up00fz9lyqs5sjks82k22eqz7a9srym9vysjgp3h2ua2v2cm522kg
+  amount: 42 Lovelace
+  credential:
+    key hash: 5ef488bf2021484ad03aaca56402f74b0193656121240637573aa62b
+  network: Testnet
