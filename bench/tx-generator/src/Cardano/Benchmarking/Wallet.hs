@@ -6,8 +6,6 @@ module Cardano.Benchmarking.Wallet
 where
 import           Prelude
 
-import           Data.IxSet.Typed as IxSet
-import           Data.Proxy
 import           Control.Concurrent.MVar
 
 import           Cardano.Api
@@ -17,6 +15,7 @@ import           Cardano.Benchmarking.GeneratorTx.Tx as Tx hiding (Fund)
 import           Cardano.Benchmarking.FundSet as FundSet
 
 type WalletRef = MVar Wallet
+type TxGenerator era = [Fund] -> [Lovelace] -> Validity -> Either String (Tx era, [Fund])
 
 data Wallet = Wallet {
     walletNetworkId :: !NetworkId
@@ -33,55 +32,56 @@ initWallet network key = newMVar $ Wallet {
   , walletFunds = emptyFunds
   }
 
-walletRefInsertFund :: WalletRef -> Fund -> IO ()
-walletRefInsertFund ref fund = modifyMVar_  ref $ \w -> return $ walletInsertFund w fund
 
-walletInsertFund :: Wallet -> Fund -> Wallet
-walletInsertFund w f
-  = w { walletFunds = FundSet.insertFund (walletFunds w) f }
+askWalletRef :: WalletRef -> (Wallet -> a) -> IO a
+askWalletRef r f = do
+  w <- readMVar r
+  return $ f w
 
-walletDeleteFund :: Wallet -> Fund -> Wallet
-walletDeleteFund w f
-  = w { walletFunds = FundSet.deleteFund (walletFunds w) f }
+modifyWalletRef :: WalletRef -> (Wallet -> IO (Wallet, a)) -> IO a
+modifyWalletRef = modifyMVar
 
-walletUpdateFunds :: Wallet -> [Fund] -> [Fund] -> Wallet
-walletUpdateFunds w add del
-  = foldl walletInsertFund w2 add
- where w2 = foldl walletDeleteFund w del
-
-walletRefCreateCoins :: forall era. IsShelleyBasedEra era
-  => WalletRef
-  -> [Lovelace]
-  -> IO (Either String (Tx era))
-walletRefCreateCoins ref coins
-  = modifyMVar ref $ \w -> case walletCreateCoins w coins of
-     Right (newWallet, tx) -> return (newWallet, Right tx)
+modifyWalletRefEither :: WalletRef -> (Wallet -> Either err (Wallet,a)) -> IO (Either err a)
+modifyWalletRefEither ref action
+  = modifyMVar ref $ \w -> case action w of
+     Right (newWallet, res) -> return (newWallet, Right res)
      Left err -> return (w, Left err)
 
-walletCreateCoins :: forall era. IsShelleyBasedEra era
-  => Wallet
-  -> [Lovelace]
-  -> Either String (Wallet, Tx era)
-walletCreateCoins wallet genValues = do
-  inputCoin <- findSufficientCoin (walletFunds wallet) (sum genValues)
-  let outValues = includeChange [getFundLovelace inputCoin] genValues
-  (tx, txId) <- genTx (walletKey wallet) (walletNetworkId wallet) [inputCoin] outValues
-  let newFunds = zipWith (mkNewFund txId) [TxIx 0 ..] outValues
-  Right (walletUpdateFunds wallet newFunds [inputCoin] , tx)
- where
-  mkNewFund :: TxId -> TxIx -> Lovelace -> Fund
-  mkNewFund txId txIx val = Fund $ InAnyCardanoEra (cardanoEra @ era) $ FundInEra {
-      _fundTxIn = TxIn txId txIx
-    , _fundVal = mkTxOutValueAdaOnly val
-    , _fundSigningKey = walletKey wallet
-    , _fundValidity = Confirmed
-    }
+walletRefInsertFund :: WalletRef -> Fund -> IO ()
+walletRefInsertFund ref fund = modifyMVar_  ref $ \w -> return $ walletInsertFund fund w
 
-  findSufficientCoin :: FundSet -> Lovelace -> Either String Fund
-  findSufficientCoin fs minValue = case coins of
-    [] -> Left $ "findSufficientCoin: no single coin with min value >= " ++ show minValue
-    (c:_) -> Right c
-    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed @>= minValue)
+walletInsertFund :: Fund -> Wallet -> Wallet
+walletInsertFund f w
+  = w { walletFunds = FundSet.insertFund (walletFunds w) f }
+
+walletDeleteFund :: Fund -> Wallet -> Wallet
+walletDeleteFund f w
+  = w { walletFunds = FundSet.deleteFund (walletFunds w) f }
+
+walletUpdateFunds :: [Fund] -> [Fund] -> Wallet -> Wallet
+walletUpdateFunds add del w
+  = foldl (flip walletInsertFund) w2 add
+ where w2 = foldl (flip walletDeleteFund) w del
+
+walletSelectFunds :: Wallet -> FundSelector -> Either String [Fund]
+walletSelectFunds w s = s $ walletFunds w
+
+walletExtractFunds :: Wallet -> FundSelector -> Either String (Wallet, [Fund])
+walletExtractFunds w s
+  = case walletSelectFunds w s of
+    Left err -> Left err
+    Right funds -> Right (walletUpdateFunds [] funds w, funds)
+
+walletCreateCoins ::
+     TxGenerator era
+  -> [Lovelace]
+  -> Wallet
+  -> Either String (Wallet, Tx era)
+walletCreateCoins txGenerator genValues wallet = do
+  inputFunds <- selectMinValue (sum genValues) (walletFunds wallet)
+  let outValues = includeChange (map getFundLovelace inputFunds) genValues
+  (tx, newFunds) <- txGenerator inputFunds outValues Confirmed
+  Right (walletUpdateFunds newFunds inputFunds wallet, tx)
 
 includeChange :: [Lovelace] -> [Lovelace] -> [Lovelace]
 includeChange have spend = case compare changeValue 0 of
@@ -94,14 +94,12 @@ includeChange have spend = case compare changeValue 0 of
 genTx :: forall era. IsShelleyBasedEra era
   => SigningKey PaymentKey
   -> NetworkId
-  -> [Fund]
-  -> [Lovelace]
-  -> Either String (Tx era, TxId)
-genTx key networkId inFunds outValues
+  -> TxGenerator era
+genTx key networkId inFunds outValues validity
   = case makeTransactionBody txBodyContent of
       Left err -> error $ show err
       Right b -> Right ( signShelleyTransaction b (map (WitnessPaymentKey . getFundKey) inFunds)
-                       , getTxId b
+                       , newFunds $ getTxId b
                        )
  where
   txBodyContent = TxBodyContent {
@@ -130,51 +128,32 @@ genTx key networkId inFunds outValues
     ShelleyBasedEraMary    -> TxValidityNoUpperBound ValidityNoUpperBoundInMaryEra
     ShelleyBasedEraAlonzo  -> TxValidityNoUpperBound ValidityNoUpperBoundInAlonzoEra
 
-benchmarkTransaction :: forall era. IsShelleyBasedEra era
-  => Wallet
-  -> Int
-  -> Target
-  -> Either String (Wallet, Tx era)
-benchmarkTransaction wallet numInputs targetNode =
-  walletTransaction wallet numInputs targetNode fundsToTx
- where
-  fundsToTx w inputFunds outValues
-    = genTx (walletKey w) (walletNetworkId w) inputFunds outValues
-
-walletTransaction :: forall era. IsShelleyBasedEra era
-  => Wallet
-  -> Int
-  -> Target
-  -> (Wallet -> [Fund] -> [Lovelace] -> Either String (Tx era, TxId) )
-  -> Either String (Wallet, Tx era)
-walletTransaction wallet numInputs targetNode fundsToTx = do
-  inputFunds <- findInputFunds (walletFunds wallet) targetNode
-  let outValues = map getFundLovelace inputFunds
-  (tx, txId) <- fundsToTx wallet inputFunds outValues
-  let
-    newFunds = zipWith (mkNewFund txId) [TxIx 0 ..] outValues
-    newWallet = (walletUpdateFunds wallet newFunds inputFunds) {walletSeqNumber = newSeqNumber}
-  Right (newWallet , tx)
- where
-  newSeqNumber = succ $ walletSeqNumber wallet
+  newFunds txId = zipWith (mkNewFund txId) [TxIx 0 ..] outValues
 
   mkNewFund :: TxId -> TxIx -> Lovelace -> Fund
   mkNewFund txId txIx val = Fund $ InAnyCardanoEra (cardanoEra @ era) $ FundInEra {
       _fundTxIn = TxIn txId txIx
     , _fundVal = mkTxOutValueAdaOnly val
-    , _fundSigningKey = walletKey wallet
-    , _fundValidity = InFlight targetNode newSeqNumber
+    , _fundSigningKey = key
+    , _fundValidity = validity
+    , _fundVariant = PlainOldFund
     }
 
-  findInputFunds :: FundSet -> Target -> Either String [Fund]
-  findInputFunds fs _target =
-    if length coins == numInputs
-      then Right coins
-      else Left "could not find enough input coins"
-    where
-      -- Just take confirmed coins.
-      -- TODO: extend this to unconfimed coins to the same target node
-      coins = take numInputs $ toAscList ( Proxy :: Proxy Lovelace) (fs @= IsConfirmed)
+benchmarkTransaction ::
+     Wallet
+  -> FundSelector
+  -> TxGenerator era
+  -> Target
+  -> Either String (Wallet, Tx era)
+benchmarkTransaction wallet selector txGenerator targetNode = do
+  inputFunds <- selector (walletFunds wallet)
+  let outValues = map getFundLovelace inputFunds
+  (tx, newFunds) <- txGenerator inputFunds outValues $ InFlight targetNode newSeqNumber
+  let
+    newWallet = (walletUpdateFunds newFunds inputFunds wallet) {walletSeqNumber = newSeqNumber}
+  Right (newWallet , tx)
+ where
+  newSeqNumber = succ $ walletSeqNumber wallet
 
 newtype WalletScript era = WalletScript { runWalletScript :: IO (WalletStep era) }
 
@@ -193,11 +172,21 @@ benchmarkWalletScript :: forall era .
   -> WalletScript era
 benchmarkWalletScript wRef (NumberOfTxs maxCount) (NumberOfOutputsPerTx numInputs) targetNode
   = WalletScript (modifyMVarMasked wRef nextTx)
-  where
-    nextCall = benchmarkWalletScript wRef (NumberOfTxs maxCount) (NumberOfOutputsPerTx numInputs) targetNode
-    nextTx :: Wallet -> IO (Wallet, WalletStep era)
-    nextTx w = if walletSeqNumber w > SeqNumber (fromIntegral maxCount)
-      then return (w, Done)
-      else case benchmarkTransaction w numInputs targetNode of
-        Right (wNew, tx) -> return (wNew, NextTx nextCall tx)
-        Left err -> return (w, Error err)
+ where
+  nextCall = benchmarkWalletScript wRef (NumberOfTxs maxCount) (NumberOfOutputsPerTx numInputs) targetNode
+
+  nextTx :: Wallet -> IO (Wallet, WalletStep era)
+  nextTx w = if walletSeqNumber w > SeqNumber (fromIntegral maxCount)
+    then return (w, Done)
+    else case benchmarkTransaction w selector (txGenerator w) targetNode of
+      Right (wNew, tx) -> return (wNew, NextTx nextCall tx)
+      Left err -> return (w, Error err)
+  selector = selectCountTarget numInputs targetNode
+
+  txGenerator w = genTx (walletKey w) (walletNetworkId w)
+
+limitSteps ::
+     NumberOfTxs
+  -> WalletScript era
+  -> WalletScript era
+limitSteps = undefined

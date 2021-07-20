@@ -47,9 +47,11 @@ import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.TxSubmission.Client (TxSubmissionClient,
                                                                  txSubmissionClientPeer)
+import           Ouroboros.Network.Protocol.Trans.Hello.Util (wrapClientPeer)
+
 import           Ouroboros.Network.Snocket (socketSnocket)
 
-import           Cardano.Benchmarking.Tracer (SendRecvConnect, SendRecvTxSubmission)
+import           Cardano.Benchmarking.Tracer (SendRecvConnect, SendRecvTxSubmission2)
 
 type CardanoBlock    = Consensus.CardanoBlock  StandardCrypto
 type ConnectClient = AddrInfo -> TxSubmissionClient (GenTxId CardanoBlock) (GenTx CardanoBlock) IO () -> IO ()
@@ -58,7 +60,7 @@ benchmarkConnectTxSubmit
   :: forall blk. (blk ~ CardanoBlock, RunNode blk )
   => IOManager
   -> Tracer IO SendRecvConnect
-  -> Tracer IO SendRecvTxSubmission
+  -> Tracer IO SendRecvTxSubmission2
   -> CodecConfig CardanoBlock
   -> NetworkMagic
   -> AddrInfo
@@ -79,7 +81,7 @@ benchmarkConnectTxSubmit ioManager handshakeTracer submissionTracer codecConfig 
     (addrAddress remoteAddr)
  where
   n2nVer :: NodeToNodeVersion
-  n2nVer = NodeToNodeV_5
+  n2nVer = NodeToNodeV_7
   blkN2nVer :: BlockNodeToNodeVersion blk
   blkN2nVer = supportedVers Map.! n2nVer
   supportedVers :: Map.Map NodeToNodeVersion (BlockNodeToNodeVersion blk)
@@ -112,8 +114,8 @@ benchmarkConnectTxSubmit ioManager handshakeTracer submissionTracer codecConfig 
           , NtN.txSubmissionProtocol = InitiatorProtocolOnly $
                                          MuxPeer
                                            submissionTracer
-                                           (cTxSubmissionCodec myCodecs)
-                                           (txSubmissionClientPeer myTxSubClient)
+                                           (cTxSubmission2Codec myCodecs)
+                                           (wrapClientPeer $ txSubmissionClientPeer myTxSubClient)
           } )
         n2nVer
   -- Stolen from: Ouroboros/Consensus/Network/NodeToNode.hs

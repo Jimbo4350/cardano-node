@@ -11,6 +11,7 @@ where
 import           Prelude
 
 import           Data.IxSet.Typed as IxSet
+import           Data.Proxy
 
 import           Cardano.Api as Api
 
@@ -21,8 +22,12 @@ data FundInEra era = FundInEra {
     _fundTxIn :: !TxIn
   , _fundVal  :: !(TxOutValue era)
   , _fundSigningKey :: !(SigningKey PaymentKey)
+  , _fundVariant :: !Variant
   , _fundValidity :: !Validity
   } deriving (Show)
+
+data Variant = PlainOldFund | PlutusScriptFund
+  deriving  (Show, Eq, Ord)
 
 data Validity
   = Confirmed
@@ -36,6 +41,9 @@ newtype SeqNumber = SeqNumber Int
   deriving  (Show, Eq, Ord, Enum)
 
 newtype Fund = Fund {unFund :: InAnyCardanoEra FundInEra}
+
+getFundVariant :: Fund -> Variant
+getFundVariant (Fund (InAnyCardanoEra _ a)) = _fundVariant a
 
 getFundTxIn :: Fund -> TxIn
 getFundTxIn (Fund (InAnyCardanoEra _ a)) = _fundTxIn a
@@ -71,7 +79,7 @@ instance Eq Fund where
 instance Ord Fund where
   compare a b = compare (getFundTxIn a) (getFundTxIn b)
 
-type FundIndices = '[ TxIn, IsConfirmed, Target, SeqNumber, Lovelace ]
+type FundIndices = '[ TxIn, IsConfirmed, Target, SeqNumber, Lovelace, Variant ]
 type FundSet = IxSet FundIndices Fund
 
 instance Indexable FundIndices Fund where
@@ -87,6 +95,7 @@ instance Indexable FundIndices Fund where
       InFlight _ n -> [ n ]
     )
     (ixFun $ \f -> [ getFundLovelace f ])
+    (ixFun $ \f -> [ getFundVariant f ])
 
 emptyFunds :: FundSet
 emptyFunds = IxSet.empty
@@ -104,3 +113,40 @@ liftAnyEra f x = case x of
   InAnyCardanoEra AllegraEra a ->   InAnyCardanoEra AllegraEra $ f a
   InAnyCardanoEra MaryEra a    ->   InAnyCardanoEra MaryEra $ f a
   InAnyCardanoEra AlonzoEra a  ->   InAnyCardanoEra AlonzoEra $ f a
+
+type FundSelector = FundSet -> Either String [Fund]
+
+-- Select a number of confirmed Fund that where send to a specific Target node.
+-- TODO: dont ignore target.
+selectCountTarget :: Int -> Target -> FundSet -> Either String [Fund]
+selectCountTarget count _target fs =
+  if length funds == count
+    then Right funds
+    else Left "could not find enough input coins"
+  where
+    -- Just take confirmed coins.
+    -- TODO: extend this to unconfimed coins to the same target node
+    funds = take count $ toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed)
+
+-- Select Funds to cover a minimum value.
+-- TODO:
+-- This fails unless there is a single fund with the required value
+-- Extend this to really return a list of funds.
+selectMinValue :: Lovelace -> FundSet -> Either String [Fund]
+selectMinValue minValue fs = case coins of
+    [] -> Left $ "findSufficientCoin: no single coin with min value >= " ++ show minValue
+    (c:_) -> Right [c]
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed @>= minValue)
+
+selectPlutusFund :: FundSet -> Either String [Fund]
+selectPlutusFund fs = case coins of
+    [] -> Left $ "no Plutus fund found"
+    (c:_) -> Right [c]
+    where coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlutusScriptFund @= IsConfirmed )
+
+selectCollateral :: FundSet -> Either String [Fund]
+selectCollateral fs = case coins of
+  [] -> Left $ "no matching none-Plutus fund found"
+  (c:_) -> Right [c]
+ where
+  coins = toAscList ( Proxy :: Proxy Lovelace) (fs @=PlainOldFund @= IsConfirmed @= (1492000000 :: Lovelace) )

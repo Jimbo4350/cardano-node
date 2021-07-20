@@ -49,7 +49,7 @@ import qualified Ouroboros.Consensus.Shelley.Ledger.Mempool as Mempool (TxId(She
 import           Ouroboros.Consensus.Shelley.Protocol (StandardCrypto)
 
 import           Ouroboros.Consensus.Cardano.Block (GenTx (GenTxAllegra, GenTxAlonzo, GenTxShelley, GenTxMary))
-import qualified Ouroboros.Consensus.Cardano.Block as Block (TxId(GenTxIdShelley, GenTxIdAllegra, GenTxIdMary))
+import qualified Ouroboros.Consensus.Cardano.Block as Block (TxId(GenTxIdShelley, GenTxIdAllegra, GenTxIdAlonzo, GenTxIdMary))
 
 import           Ouroboros.Network.Protocol.TxSubmission.Client (ClientStIdle (..),
                                                                  ClientStTxIds (..),
@@ -201,6 +201,7 @@ txSubmissionClient tr bmtr initialTxSource endOfProtocolCallback =
   fromGenTxId (Block.GenTxIdShelley (Mempool.ShelleyTxId i)) = fromShelleyTxId i
   fromGenTxId (Block.GenTxIdAllegra (Mempool.ShelleyTxId i)) = fromShelleyTxId i
   fromGenTxId (Block.GenTxIdMary    (Mempool.ShelleyTxId i)) = fromShelleyTxId i
+  fromGenTxId (Block.GenTxIdAlonzo  (Mempool.ShelleyTxId i)) = fromShelleyTxId i
   fromGenTxId _ = error "submission.hs: fromGenTxId"
 
   tokIsBlocking :: TokBlockingStyle a -> Bool
