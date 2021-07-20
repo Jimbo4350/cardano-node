@@ -17,7 +17,7 @@ import qualified Prelude
 
 import           Control.Monad.Trans.Except.Extra (handleIOExceptT)
 import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Family (AF_INET, AF_INET6),
-                   Socket, SocketType (..))
+                   SockAddr, Socket, SocketType (..))
 import qualified Network.Socket as Socket
 
 import           Cardano.Node.Configuration.POM (NodeConfiguration (..))
@@ -45,12 +45,12 @@ data SocketOrSocketInfo socket info =
   deriving Show
 
 
-getSocketOrSocketInfoAddr :: SocketOrSocketInfo Socket AddrInfo
+getSocketOrSocketInfoAddr :: SocketOrSocketInfo Socket Socket.SockAddr
                           -> IO (SocketOrSocketInfo Socket.SockAddr Socket.SockAddr)
 getSocketOrSocketInfoAddr (ActualSocket sock) =
     ActualSocket <$> Socket.getSocketName sock
-getSocketOrSocketInfoAddr (SocketInfo info)   =
-    return $ SocketInfo (Socket.addrAddress info)
+getSocketOrSocketInfoAddr (SocketInfo sockAddr)  =
+    return $ SocketInfo sockAddr
 
 
 -- | Errors for the current module.
@@ -111,8 +111,8 @@ renderSocketConfigError (GetAddrInfoError addr port ex) =
 --
 gatherConfiguredSockets :: NodeConfiguration
                         -> ExceptT SocketConfigError IO
-                                   (Maybe (SocketOrSocketInfo Socket AddrInfo),
-                                    Maybe (SocketOrSocketInfo Socket AddrInfo),
+                                   (Maybe (SocketOrSocketInfo Socket SockAddr),
+                                    Maybe (SocketOrSocketInfo Socket SockAddr),
                                     Maybe (SocketOrSocketInfo Socket SocketPath))
 gatherConfiguredSockets NodeConfiguration { ncNodeIPv4Addr,
                                             ncNodeIPv6Addr,
@@ -138,7 +138,7 @@ gatherConfiguredSockets NodeConfiguration { ncNodeIPv4Addr,
       (Nothing, Just sock)  -> return (Just (ActualSocket sock))
       (Just _, Just _)      -> throwError ClashingPublicIpv4SocketGiven
       (Just addr, Nothing)  ->
-            fmap SocketInfo . head
+            fmap (SocketInfo . addrAddress) . head
         <$> nodeAddressInfo
               (Just $ nodeHostIPv4AddressToIPAddress addr)
               ncNodePortNumber
@@ -150,7 +150,7 @@ gatherConfiguredSockets NodeConfiguration { ncNodeIPv4Addr,
       (Nothing, Just sock)  -> return (Just (ActualSocket sock))
       (Just _, Just _)      -> throwError ClashingPublicIpv6SocketGiven
       (Just addr, Nothing)  ->
-              fmap SocketInfo . head
+              fmap (SocketInfo . addrAddress) . head
           <$> nodeAddressInfo
                 (Just $ nodeHostIPv6AddressToIPAddress addr)
                 ncNodePortNumber
@@ -162,8 +162,10 @@ gatherConfiguredSockets NodeConfiguration { ncNodeIPv4Addr,
             (Nothing, Nothing) -> do
 
               info <- nodeAddressInfo Nothing ncNodePortNumber
-              let ipv4' = SocketInfo <$> find ((== AF_INET)  . addrFamily) info
-                  ipv6' = SocketInfo <$> find ((== AF_INET6) . addrFamily) info
+              let ipv4' = SocketInfo . addrAddress
+                      <$> find ((== AF_INET)  . addrFamily) info
+                  ipv6' = SocketInfo . addrAddress
+                      <$> find ((== AF_INET6) . addrFamily) info
               when (isNothing $ ipv4' <|> ipv6') $
                 throwError NoPublicSocketGiven
 
@@ -183,7 +185,8 @@ gatherConfiguredSockets NodeConfiguration { ncNodeIPv4Addr,
       (Nothing, Nothing)    -> return Nothing
       (Just _, Just _)      -> throwError ClashingLocalSocketGiven
       (Nothing, Just sock)  -> return . Just $ ActualSocket sock
-      (Just path, Nothing)  -> removeStaleLocalSocket path $> Just (SocketInfo path)
+      (Just path, Nothing)  -> removeStaleLocalSocket path
+                            $> Just (SocketInfo path)
 
     return (ipv4', ipv6', local)
 

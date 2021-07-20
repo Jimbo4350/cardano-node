@@ -1,11 +1,16 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 {-# OPTIONS_GHC -Wno-noncanonical-monoid-instances #-}
 
 module Cardano.Node.Configuration.POM
   ( NodeConfiguration (..)
+  , NetworkP2PMode (..)
+  , SomeNetworkP2PMode (..)
   , PartialNodeConfiguration(..)
   , defaultPartialNodeConfiguration
   , lastOption
@@ -18,6 +23,7 @@ where
 
 import           Cardano.Prelude
 import           Prelude (String)
+import qualified GHC.Show as Show
 
 import           Control.Monad (fail)
 import           Data.Aeson
@@ -37,7 +43,29 @@ import           Cardano.Tracing.Config
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (SnapshotInterval (..))
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import           Ouroboros.Consensus.Node ( NetworkP2PMode (..) )
+import qualified Ouroboros.Consensus.Node as Consensus ( NetworkP2PMode (..) )
+
+data NetworkP2PMode = EnabledP2PMode | DisabledP2PMode
+  deriving (Eq, Show, Generic)
+
+data SomeNetworkP2PMode where
+    SomeNetworkP2PMode :: forall p2p.
+                          Consensus.NetworkP2PMode p2p
+                       -> SomeNetworkP2PMode
+
+instance Eq SomeNetworkP2PMode where
+    (==) (SomeNetworkP2PMode Consensus.EnabledP2PMode)
+         (SomeNetworkP2PMode Consensus.EnabledP2PMode)
+       = True
+    (==) (SomeNetworkP2PMode Consensus.DisabledP2PMode)
+         (SomeNetworkP2PMode Consensus.DisabledP2PMode)
+       = True
+    (==) _ _
+       = False
+
+instance Show SomeNetworkP2PMode where
+    show (SomeNetworkP2PMode mode@Consensus.EnabledP2PMode)  = show mode
+    show (SomeNetworkP2PMode mode@Consensus.DisabledP2PMode) = show mode
 
 data NodeConfiguration
   = NodeConfiguration
@@ -104,7 +132,7 @@ data NodeConfiguration
        , ncTargetNumberOfActivePeers      :: Int
 
          -- Enable experimental P2P mode
-       , ncEnableP2P :: NetworkP2PMode
+       , ncEnableP2P :: SomeNetworkP2PMode
        } deriving (Eq, Show)
 
 
@@ -405,7 +433,7 @@ makeNodeConfiguration pnc = do
   ncTimeWaitTimeout <-
     lastToEither "Missing TimeWaitTimeout"
     $ pncTimeWaitTimeout pnc
-  ncEnableP2P <-
+  enableP2P <-
     lastToEither "Missing EnableP2P"
     $ pncEnableP2P pnc
 
@@ -436,7 +464,9 @@ makeNodeConfiguration pnc = do
              , ncTargetNumberOfKnownPeers
              , ncTargetNumberOfEstablishedPeers
              , ncTargetNumberOfActivePeers
-             , ncEnableP2P
+             , ncEnableP2P = case enableP2P of
+                 EnabledP2PMode  -> SomeNetworkP2PMode Consensus.EnabledP2PMode
+                 DisabledP2PMode -> SomeNetworkP2PMode Consensus.DisabledP2PMode
              }
 
 ncProtocol :: NodeConfiguration -> Protocol
