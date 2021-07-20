@@ -40,9 +40,8 @@ module Cardano.Api.TxBody (
     -- * Transaction outputs
     TxOut(..),
     TxOutValue(..),
-    lovelaceToTxOutValue,
-    serialiseAddressForTxOut,
     TxOutDatumHash(..),
+    lovelaceToTxOutValue,
 
     -- * Other transaction body types
     TxInsCollateral(..),
@@ -198,7 +197,6 @@ import           Cardano.Api.KeysShelley
 import           Cardano.Api.NetworkId
 import           Cardano.Api.ProtocolParameters
 import           Cardano.Api.Script
-import           Cardano.Api.SerialiseBech32
 import           Cardano.Api.SerialiseCBOR
 import           Cardano.Api.SerialiseJSON
 import           Cardano.Api.SerialiseRaw
@@ -333,21 +331,14 @@ deriving instance Show (TxOut era)
 
 instance IsCardanoEra era => ToJSON (TxOut era) where
   toJSON (TxOut addr val TxOutDatumHashNone) =
-    object [ "address" .= serialiseAddressForTxOut addr
+    object [ "address" .= addr
            , "value"   .= toJSON val
            ]
   toJSON (TxOut addr val (TxOutDatumHash _ d)) =
-    object [ "address" .= serialiseAddressForTxOut addr
+    object [ "address" .= addr
            , "value"   .= toJSON val
            , "data"    .= toJSON d
            ]
-
-serialiseAddressForTxOut :: AddressInEra era -> Text
-serialiseAddressForTxOut (AddressInEra addrType addr) =
-  case addrType of
-    ByronAddressInAnyEra  -> serialiseToRawBytesHexText addr
-    ShelleyAddressInEra _ -> serialiseToBech32 addr
-
 
 fromByronTxOut :: Byron.TxOut -> TxOut ByronEra
 fromByronTxOut (Byron.TxOut addr value) =

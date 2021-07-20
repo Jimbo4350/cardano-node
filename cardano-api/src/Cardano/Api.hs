@@ -165,8 +165,8 @@ module Cardano.Api (
     -- ** Transaction outputs
     TxOut(TxOut),
     TxOutValue(..),
-    serialiseAddressForTxOut,
     TxOutDatumHash(..),
+    lovelaceToTxOutValue,
 
     -- ** Other transaction body types
     TxInsCollateral(..),
