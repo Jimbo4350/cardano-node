@@ -14,21 +14,21 @@ EOF
 }
 
 analyse() {
-local skip_preparation= time= dump_logobjects=
+local skip_preparation= time= dump_logobjects= args=()
 while test $# -gt 0
 do case "$1" in
-       --reanalyse | --re ) skip_preparation='true';;
-       --dump-logobjects )  dump_logobjects='true';;
-       --time )             time='eval time';;
+       --reanalyse | --re ) skip_preparation='true'; args+=($1);;
+       --dump-logobjects )  dump_logobjects='true';  args+=($1);;
+       --time )             time='eval time';        args+=($1);;
        * ) break;; esac; shift; done
 
 local op=${1:-$(usage_analyse)}; shift
 
 case "$op" in
     block-propagation | bp )
-        local usage="USAGE: wb analyse $op [RUN-NAME=current]"
+        local usage="USAGE: wb analyse $op [RUN-NAME=current].."
 
-        local name=${1:-current}
+        local name=${1:-current}; shift
         local dir=$(run get "$name")
         local adir=$dir/analysis
         if test -z "$dir"
@@ -83,7 +83,10 @@ case "$op" in
             locli_args+=(--logobjects-json "$adir"/logs-cluster.logobjects.json); fi
 
         ${time} locli 'analyse' 'block-propagation' \
-            "${locli_args[@]}" "$adir"/*.flt.json;;
+                "${locli_args[@]}" "$adir"/*.flt.json
+
+        ## More than one run passed?
+        test $# -gt 0 && analyse ${args[*]} block-propagation "$@";;
 
     grep-filtered-logs | grep | g )
         local usage="USAGE: wb analyse $op BLOCK [MACHSPEC=*] [RUN-NAME=current]"

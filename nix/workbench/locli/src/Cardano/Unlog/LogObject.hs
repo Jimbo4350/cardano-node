@@ -1,6 +1,9 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS_GHC -Wno-partial-fields -Wno-orphans #-}
 
 module Cardano.Unlog.LogObject (module Cardano.Unlog.LogObject) where
@@ -78,6 +81,7 @@ data LogObject
     , loBody :: !LOBody
     }
   deriving (Generic, Show)
+  deriving anyclass NFData
 
 instance ToJSON LogObject
 
@@ -92,10 +96,14 @@ instance Print ShortText where
   hPutStrLn h = hPutStrLn h . toText
 
 newtype TId = TId { unTId :: ShortText }
-  deriving (Eq, Ord, Show, FromJSON, ToJSON)
+  deriving (Eq, Generic, Ord, Show)
+  deriving newtype (FromJSON, ToJSON)
+  deriving anyclass NFData
 
 newtype Hash = Hash { unHash :: ShortText }
-  deriving (Eq, Ord, FromJSON, ToJSON)
+  deriving (Eq, Generic, Ord)
+  deriving newtype (FromJSON, ToJSON)
+  deriving anyclass NFData
 
 shortHash :: Hash -> LText.Text
 shortHash = toText . Text.take 6 . unHash
@@ -106,12 +114,17 @@ instance AE.ToJSONKey Hash where
   toJSONKey = AE.toJSONKeyText (toText . unHash)
 
 newtype Host = Host { unHost :: ShortText }
-  deriving (Eq, IsString, Ord, Show, FromJSON, ToJSON)
+  deriving (Eq, Generic, Ord, Show)
+  deriving newtype (IsString, FromJSON, ToJSON)
+  deriving anyclass NFData
 
 instance FromJSON BlockNo where
   parseJSON o = BlockNo <$> parseJSON o
 instance ToJSON BlockNo where
   toJSON (BlockNo x) = toJSON x
+
+deriving anyclass instance NFData BlockNo
+deriving instance NFData a => NFData (Resources a)
 
 --
 -- LogObject stream interpretation
@@ -273,6 +286,7 @@ data LOBody
   | LOAny !Object
   | LODecodeError !String
   deriving (Generic, Show)
+  deriving anyclass NFData
 
 instance ToJSON LOBody
 

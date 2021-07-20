@@ -270,6 +270,8 @@ data NodeShelleyProtocolConfiguration =
      NodeShelleyProtocolConfiguration {
        npcShelleyGenesisFile     :: !GenesisFile
      , npcShelleyGenesisFileHash :: !(Maybe GenesisHash)
+     , npcStubComputeDuration    :: !Double
+     , npcStubComputePrecision   :: !Double
      }
   deriving (Eq, Show)
 

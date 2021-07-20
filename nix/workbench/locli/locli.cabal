@@ -44,6 +44,7 @@ library
                      , cardano-config
                      , cardano-prelude
                      , containers
+                     , deepseq
                      , directory
                      , filepath
                      , file-embed
@@ -87,7 +88,7 @@ executable locli
   ghc-options:         -threaded
                        -Wall
                        -rtsopts
-                       "-with-rtsopts=-T"
+                       "-with-rtsopts=-T -N4 -A4m"
   build-depends:       base
                      , cardano-prelude
                      , locli

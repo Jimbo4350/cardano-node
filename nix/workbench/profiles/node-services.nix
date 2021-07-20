@@ -54,8 +54,12 @@ let
                TracingVerbosity     = "NormalVerbosity";
                minSeverity          = "Debug";
 
-               TraceMempool         = true;
-               TraceTxInbound       = true;
+               TraceMempool               = true;
+               TraceTxInbound             = true;
+               TraceBlockFetchClient      = true;
+               TraceBlockFetchServer      = true;
+               TraceChainSyncHeaderServer = true;
+               TraceChainSyncClient       = true;
 
                defaultScribes = [
                  [ "StdoutSK" "stdout" ]

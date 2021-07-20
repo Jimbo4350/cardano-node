@@ -75,13 +75,11 @@ renderTimeline xs =
    entry :: a -> Text
    entry v = renderLineDist $
      \Field{..} ->
-       let w = show fWidth
-       in case fSelect of
-         IInt    (($v)->x) -> T.pack $ printf ('%':(w++"d")) x
-         IWord64 (($v)->x) -> T.pack $ printf ('%':(w++"d")) x
-         IFloat  (($v)->x) -> T.take fWidth $ T.pack $
-                              printf ('%':'.':(show (fWidth - 2)++"F")) x
-         IDeltaT (($v)->x) -> T.take fWidth . T.dropWhileEnd (== 's') $ show x
+       case fSelect of
+         IInt    (($v)->x) -> T.pack $ printf "%*d" fWidth x
+         IWord64 (($v)->x) -> T.pack $ printf "%*d" fWidth x
+         IFloat  (($v)->x) -> T.pack $ take fWidth $ printf "%*F" (fWidth - 2) x
+         IDeltaT (($v)->x) -> T.pack $ take fWidth $ printf "%-*s" fWidth $ dropWhileEnd (== 's') $ show x
          IText   (($v)->x) -> T.take fWidth . T.dropWhileEnd (== 's') $ x
 
    fields :: [IField a]
@@ -107,6 +105,8 @@ renderDistributions mode x =
   case mode of
     RenderPretty -> catMaybes [head1, head2] <> pLines <> sizeAvg
     RenderCsv    -> headCsv : pLines
+     where headCsv = T.intercalate "," $ fId <$> fields
+
  where
    pLines :: [Text]
    pLines = fLine <$> [0..(nPercs - 1)]
@@ -137,7 +137,6 @@ renderDistributions mode x =
            else Just (renderLineHead1 (uncurry T.take . ((+1) . fWidth &&& fHead1)))
    head2 = if all ((== 0) . T.length . fHead2) fields then Nothing
            else Just (renderLineHead2 (uncurry T.take . ((+1) . fWidth &&& fHead2)))
-   headCsv = T.intercalate "," $ fId <$> fields
 
    sizeAvg :: [Text]
    sizeAvg = fmap (T.intercalate " ")

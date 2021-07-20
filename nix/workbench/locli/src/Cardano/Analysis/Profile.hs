@@ -117,7 +117,7 @@ instance FromJSON Profile where
 
 newtype SlotStart =
   SlotStart { unSlotStart :: UTCTime }
-  deriving (Eq, Aeson.FromJSON, Generic, Show, Aeson.ToJSON)
+  deriving (Eq, Aeson.FromJSON, Generic, NFData, Show, Aeson.ToJSON)
 
 slotStart :: ChainInfo -> SlotNo -> SlotStart
 slotStart CInfo{..} =

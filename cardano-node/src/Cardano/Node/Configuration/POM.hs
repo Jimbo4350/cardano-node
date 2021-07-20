@@ -237,10 +237,14 @@ instance FromJSON PartialNodeConfiguration where
             (Just _, Just _)   -> fail $ "Specify either ShelleyGenesisFile"
                                       ++ "or GenesisFile, but not both"
         npcShelleyGenesisFileHash <- v .:? "ShelleyGenesisHash"
+        npcStubComputeDuration  <- fromMaybe 0.05  <$> v .:? "StubComputeDuration"
+        npcStubComputePrecision <- fromMaybe 0.005 <$> v .:? "StubComputePrecision"
 
         pure NodeShelleyProtocolConfiguration {
                npcShelleyGenesisFile
              , npcShelleyGenesisFileHash
+             , npcStubComputeDuration
+             , npcStubComputePrecision
              }
 
       parseAlonzoProtocol v = do
