@@ -133,6 +133,7 @@ library
                       , ouroboros-network
                       , parsec
                       , plutus-ledger-api
+                      , prettyprinter
                       , shelley-spec-ledger
                       , small-steps
                       , split

@@ -8,10 +8,13 @@ import           Prelude (String)
 
 import           Options.Applicative
 import qualified Options.Applicative as Opt
+import           Options.Applicative.Help.Types (helpText)
 
 import           Cardano.CLI.Byron.Parsers (backwardsCompatibilityCommands, parseByronCommands)
 import           Cardano.CLI.Run (ClientCommand (..))
 import           Cardano.CLI.Shelley.Parsers (parseShelleyCommands)
+import           Prettyprinter
+import           Prettyprinter.Render.String
 
 command' :: String -> String -> Parser a -> Mod CommandFields a
 command' c descr p =
@@ -29,7 +32,17 @@ opts =
     )
 
 pref :: ParserPrefs
-pref = Opt.prefs $ showHelpOnEmpty <> helpHangUsageOverflow 10
+pref = Opt.prefs $ mempty
+  <> showHelpOnEmpty
+  <> helpHangUsageOverflow 10
+  <> helpRenderHelp customRenderHelp
+
+-- | Convert a help text to 'String'.
+customRenderHelp :: Int -> ParserHelp -> String
+customRenderHelp cols
+  = (`renderShowS` "")
+  . layoutPretty (LayoutOptions (AvailablePerLine cols 1.0))
+  . helpText
 
 parseClientCommand :: Parser ClientCommand
 parseClientCommand =
