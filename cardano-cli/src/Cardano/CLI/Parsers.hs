@@ -29,7 +29,7 @@ opts =
     )
 
 pref :: ParserPrefs
-pref = Opt.prefs showHelpOnEmpty
+pref = Opt.prefs $ showHelpOnEmpty <> helpHangUsageOverflow 10
 
 parseClientCommand :: Parser ClientCommand
 parseClientCommand =

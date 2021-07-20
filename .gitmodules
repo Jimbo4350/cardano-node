@@ -1,0 +1,6 @@
+[submodule "optparse-applicative"]
+	path = optparse-applicative
+	url = git@github.com:input-output-hk/optparse-applicative.git
+[submodule "criterion"]
+	path = criterion
+	url = git@github.com:input-output-hk/criterion.git
