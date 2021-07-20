@@ -572,7 +572,12 @@ module Cardano.Api (
     SlotsToEpochEnd(..),
     slotToEpoch,
 
-    NodeToClientVersion(..)
+    NodeToClientVersion(..),
+
+    -- ** Monadic queries
+    LocalStateQueryScript,
+    sendMsgQuery,
+    setupLocalStateQueryScript
   ) where
 
 import           Cardano.Api.Address
@@ -585,6 +590,7 @@ import           Cardano.Api.GenesisParameters
 import           Cardano.Api.HasTypeProxy
 import           Cardano.Api.Hash
 import           Cardano.Api.IPC
+import           Cardano.Api.IPC.Monad
 import           Cardano.Api.Key
 import           Cardano.Api.KeysByron
 import           Cardano.Api.KeysPraos
