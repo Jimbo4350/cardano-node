@@ -232,7 +232,7 @@ handleSimpleNode
   -> Protocol.ProtocolInfoArgs IO blk
   -> NetworkP2PMode p2p
   -> Trace IO Text
-  -> Tracers RemoteConnectionId LocalConnectionId blk p2p
+  -> Tracers RemoteAddress LocalAddress blk p2p
   -> NodeConfiguration
   -> (NodeKernel IO RemoteConnectionId LocalConnectionId blk -> IO ())
   -- ^ Called on the 'NodeKernel' after creating it, but before the network

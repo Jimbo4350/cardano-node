@@ -123,19 +123,19 @@ import           Shelley.Spec.Ledger.OCert (KESPeriod (..))
 {- HLINT ignore "Redundant bracket" -}
 {- HLINT ignore "Use record patterns" -}
 
-data Tracers peer localPeer blk p2p = Tracers
+data Tracers remoteAddr localAddr blk p2p = Tracers
   { -- | Trace the ChainDB
     chainDBTracer :: Tracer IO (ChainDB.TraceEvent blk)
     -- | Consensus-specific tracers.
-  , consensusTracers :: Consensus.Tracers IO peer localPeer blk
+  , consensusTracers :: Consensus.Tracers IO (ConnectionId remoteAddr) (ConnectionId localAddr) blk
     -- | Tracers for the node-to-node protocols.
-  , nodeToNodeTracers :: NodeToNode.Tracers IO peer blk DeserialiseFailure
+  , nodeToNodeTracers :: NodeToNode.Tracers IO (ConnectionId remoteAddr) blk DeserialiseFailure
     --, serialisedBlockTracer :: NodeToNode.SerialisedTracer IO peer blk (SerialisedBlockTrace)
     -- | Tracers for the node-to-client protocols
-  , nodeToClientTracers :: NodeToClient.Tracers IO localPeer blk DeserialiseFailure
+  , nodeToClientTracers :: NodeToClient.Tracers IO (ConnectionId localAddr) blk DeserialiseFailure
     -- | Diffusion tracers
-  , diffusionTracers :: Diffusion.Tracers RemoteAddress      NodeToNodeVersion
-                                          LocalAddress NodeToClientVersion
+  , diffusionTracers :: Diffusion.Tracers remoteAddr NodeToNodeVersion
+                                          localAddr  NodeToClientVersion
                                           IO
   , diffusionTracersExtra :: Diffusion.ExtraTracers p2p
   }
@@ -285,7 +285,7 @@ mkTracers
   -> NodeKernelData blk
   -> Maybe EKGDirect
   -> NetworkP2PMode p2p
-  -> IO (Tracers (ConnectionId RemoteAddress) (ConnectionId LocalAddress) blk p2p)
+  -> IO (Tracers RemoteAddress LocalAddress blk p2p)
 mkTracers blockConfig tOpts@(TracingOn trSel) tr nodeKern ekgDirect enableP2P = do
   fStats <- mkForgingStats
   consensusTracers <- mkConsensusTracers ekgDirect trSel verb tr nodeKern fStats
