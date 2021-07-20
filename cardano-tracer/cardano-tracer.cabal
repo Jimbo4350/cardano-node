@@ -1,0 +1,145 @@
+cabal-version:       2.4
+name:                cardano-tracer
+version:             0.1.0
+synopsis:            See README for more info
+description:         See README for more info
+license:             Apache-2.0
+license-file:        LICENSE
+copyright:           2021 Input Output (Hong Kong) Ltd.
+author:              IOHK
+maintainer:          operations@iohk.io
+build-type:          Simple
+extra-doc-files:     README.md
+                     CHANGELOG.md
+
+common common-options
+  build-depends:       base >=4.12 && <5
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Widentities
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+  if impl(ghc >= 8.0)
+    ghc-options:       -Wredundant-constraints
+  if impl(ghc >= 8.2)
+    ghc-options:       -fhide-source-paths
+  if impl(ghc >= 8.4)
+    ghc-options:       -Wmissing-export-lists
+                       -Wpartial-fields
+
+  default-language:    Haskell2010
+
+library
+  import:              common-options
+  hs-source-dirs:      src
+
+  exposed-modules:     Cardano.Tracer.Acceptors
+                       Cardano.Tracer.CLI
+                       Cardano.Tracer.Configuration
+                       Cardano.Tracer.Handlers
+                       Cardano.Tracer.Run
+                       Cardano.Tracer.Types
+
+                       Cardano.Tracer.Handlers.Logs.File
+                       Cardano.Tracer.Handlers.Logs.Journal
+                       Cardano.Tracer.Handlers.Logs.Log
+                       Cardano.Tracer.Handlers.Logs.Rotator
+                       Cardano.Tracer.Handlers.Logs.Run
+
+                       Cardano.Tracer.Handlers.Metrics.Monitoring
+                       Cardano.Tracer.Handlers.Metrics.Prometheus
+                       Cardano.Tracer.Handlers.Metrics.Run
+
+  other-modules:       Paths_cardano_tracer
+
+  build-depends:         aeson
+                       , async
+                       , blaze-html
+                       , blaze-markup
+                       , bytestring
+                       , cborg
+                       , containers
+                       , contra-tracer
+                       , directory
+                       , ekg
+                       , ekg-core
+                       , ekg-forward
+                       , extra
+                       , filepath
+                       , hashable
+                       , libsystemd-journal
+                       , network
+                       , optparse-applicative
+                       , ouroboros-network-framework
+                       , serialise
+                       , snap-blaze
+                       , snap-core
+                       , snap-server
+                       , stm
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+                       , unordered-containers
+
+executable cardano-tracer
+  hs-source-dirs:      app
+
+  main-is:             cardano-tracer.hs
+
+  other-modules:       Paths_cardano_tracer
+
+  build-depends:         base
+                       , cardano-tracer
+                       , optparse-applicative
+                       , text
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       -with-rtsopts=-T
+
+test-suite cardano-tracer-test
+  import:              common-options
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             cardano-tracer-test.hs
+  other-modules:       Cardano.Tracer.Test.Types
+                       Cardano.Tracer.Test.Forwarder
+                       Cardano.Tracer.Test.Logs.File
+                       Cardano.Tracer.Test.Logs.Rotator
+
+  build-depends:         aeson
+                       , async
+                       , base
+                       , bytestring
+                       , cardano-tracer
+                       , cborg
+                       , contra-tracer
+                       , directory
+                       , ekg-core
+                       , ekg-forward
+                       , filepath
+                       , io-sim
+                       , io-classes
+                       , network
+                       , ouroboros-network-framework
+                       , QuickCheck
+                       , serialise
+                       , stm
+                       , tasty
+                       , tasty-quickcheck
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+                       , typed-protocols-examples
+                       , unordered-containers
+                       , vector
+
+  ghc-options:         -threaded
+                       -rtsopts
+                       -with-rtsopts=-N
+  default-extensions:  OverloadedStrings

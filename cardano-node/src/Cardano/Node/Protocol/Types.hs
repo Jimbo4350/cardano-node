@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE MonoLocalBinds #-}
 
 module Cardano.Node.Protocol.Types
   ( Protocol(..)
@@ -22,6 +23,7 @@ import qualified Cardano.Api.Protocol.Types as Cardano
 import           Cardano.Node.Orphans ()
 import           Cardano.Tracing.Constraints (TraceConstraints)
 import           Cardano.Tracing.Metrics (HasKESInfo, HasKESMetricsData)
+
 
 data Protocol = ByronProtocol
               | ShelleyProtocol
@@ -46,8 +48,6 @@ instance FromJSON Protocol where
 
       _ -> fail $ "Parsing of Protocol failed. "
                 <> show str <> " is not a valid protocol"
-
-
 
 data SomeConsensusProtocol where
 

@@ -1,9 +1,10 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 #if !defined(mingw32_HOST_OS)
@@ -20,7 +21,7 @@ import           Prelude (String)
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Monad.Trans.Except.Extra (left)
-import           Control.Tracer
+import           "contra-tracer" Control.Tracer
 import           Data.Text (breakOn, pack, take)
 import qualified Data.Text as Text
 import           Data.Time.Clock (getCurrentTime)
@@ -28,7 +29,8 @@ import           Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import           Data.Version (showVersion)
 import           Network.HostName (getHostName)
 import           Network.Socket (AddrInfo, Socket)
-import           System.Directory (canonicalizePath, createDirectoryIfMissing, makeAbsolute)
+import           System.Directory (canonicalizePath, createDirectoryIfMissing,
+                     makeAbsolute)
 import           System.Environment (lookupEnv)
 #ifdef UNIX
 import           System.Posix.Files
@@ -37,43 +39,56 @@ import           System.Posix.Types (FileMode)
 import           System.Win32.File
 #endif
 
-import           Cardano.BM.Data.LogItem (LOContent (..), LogObject (..), PrivacyAnnotation (..),
-                   mkLOMeta)
-import           Cardano.BM.Data.Tracer (ToLogObject (..), TracingVerbosity (..))
+import           Cardano.BM.Data.LogItem (LOContent (..), LogObject (..),
+                     PrivacyAnnotation (..), mkLOMeta)
+import           Cardano.BM.Data.Tracer (ToLogObject (..),
+                     TracingVerbosity (..))
 import           Cardano.BM.Data.Transformers (setHostname)
 import           Cardano.BM.Trace
 import           Paths_cardano_node (version)
 
 import qualified Cardano.Crypto.Libsodium as Crypto
 
-import           Cardano.Node.Configuration.Logging (LoggingLayer (..), Severity (..),
-                   createLoggingLayer, nodeBasicInfo, shutdownLoggingLayer)
+import qualified Cardano.Logging as NL
+import           Cardano.Node.Configuration.Logging (EKGDirect (..),
+                     LoggingLayer (..), Severity (..), createLoggingLayer,
+                     nodeBasicInfo, shutdownLoggingLayer)
 import           Cardano.Node.Configuration.POM (NodeConfiguration (..),
-                   PartialNodeConfiguration (..), defaultPartialNodeConfiguration,
-                   makeNodeConfiguration, parseNodeConfigurationFP)
+                     PartialNodeConfiguration (..),
+                     defaultPartialNodeConfiguration, makeNodeConfiguration,
+                     parseNodeConfigurationFP)
 import           Cardano.Node.Types
+import           Cardano.TraceDispatcher.BasicInfo.Combinators (getBasicInfo)
+import           Cardano.TraceDispatcher.BasicInfo.Types
+import           Cardano.TraceDispatcher.Era.Byron ()
+import           Cardano.TraceDispatcher.Era.Shelley ()
+import           Cardano.TraceDispatcher.Tracers (mkDispatchTracers)
 import           Cardano.Tracing.Config (TraceOptions (..), TraceSelection (..))
 import           Cardano.Tracing.Constraints (TraceConstraints)
-import           Cardano.Tracing.Metrics (HasKESInfo (..), HasKESMetricsData (..))
 
 import qualified Ouroboros.Consensus.Config as Consensus
 import           Ouroboros.Consensus.Config.SupportsNode (getNetworkMagic)
-import           Ouroboros.Consensus.Node (DiffusionArguments (..), DiffusionTracers (..),
-                   DnsSubscriptionTarget (..), IPSubscriptionTarget (..), RunNode, RunNodeArgs (..),
-                   StdRunNodeArgs (..))
+import           Ouroboros.Consensus.Node (DiffusionArguments (..),
+                     DiffusionTracers (..), DnsSubscriptionTarget (..),
+                     IPSubscriptionTarget (..), RunNode, RunNodeArgs (..),
+                     StdRunNodeArgs (..))
 import qualified Ouroboros.Consensus.Node as Node (getChainDB, run)
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..), DiffusionMode)
+import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
+                     DiffusionMode)
 
 import           Cardano.Api
 import qualified Cardano.Api.Protocol.Types as Protocol
 
 import           Cardano.Node.Configuration.Socket (SocketOrSocketInfo (..),
-                   gatherConfiguredSockets, getSocketOrSocketInfoAddr, renderSocketConfigError)
+                     gatherConfiguredSockets, getSocketOrSocketInfoAddr,
+                     renderSocketConfigError)
 import           Cardano.Node.Configuration.Topology
 import           Cardano.Node.Handlers.Shutdown
-import           Cardano.Node.Protocol (mkConsensusProtocol)
+import           Cardano.Node.Protocol (mkConsensusProtocol,
+                     renderProtocolInstantiationError)
 import           Cardano.Node.Protocol.Types
 import           Cardano.Tracing.Kernel
 import           Cardano.Tracing.Peer
@@ -111,6 +126,7 @@ runNode cmdPc = do
         Right p -> pure p
 
     eLoggingLayer <- runExceptT $ createLoggingLayer
+                     (ncTraceConfig nc)
                      (Text.pack (showVersion version))
                      nc
                      p
@@ -119,15 +135,26 @@ runNode cmdPc = do
                       Left err  -> putTextLn (show err) >> exitFailure
                       Right res -> return res
 
+    -- New logging initialisation
+    loggerConfiguration <-
+      case getLast $ pncConfigFile cmdPc of
+        Just fileName -> NL.readConfiguration (unConfigPath fileName)
+        Nothing -> putTextLn "No configuration file name found!" >> exitFailure
+    baseTrace    <- NL.standardTracer Nothing
+    forwardTrace <- NL.forwardTracer loggerConfiguration
+    mbEkgTrace   <- case llEKGDirect loggingLayer of
+                      Nothing -> pure Nothing
+                      Just ekgDirect ->
+                        liftM Just (NL.ekgTracer (Right (ekgServer ekgDirect)))
+    -- End new logging initialisation
+
     !trace <- setupTrace loggingLayer
     let tracer = contramap pack $ toLogObject trace
 
     logTracingVerbosity nc tracer
 
     let handleNodeWithTracers
-          :: ( HasKESMetricsData blk
-             , HasKESInfo blk
-             , TraceConstraints blk
+          :: ( TraceConstraints blk
              , Protocol.Protocol IO blk
              )
           => Protocol.ProtocolInfoArgs IO blk
@@ -137,12 +164,22 @@ runNode cmdPc = do
           -- Used for ledger queries and peer connection status.
           nodeKernelData <- mkNodeKernelData
           let ProtocolInfo { pInfoConfig = cfg } = Protocol.protocolInfo runP
-          tracers <- mkTracers
+          let fp = case getLast (pncConfigFile cmdPc) of
+                      Just fileName -> unConfigPath fileName
+                      Nothing       -> "No file path found!"
+          bi <- getBasicInfo nc p fp
+          tracers <- mkDispatchTracers
                        (Consensus.configBlock cfg)
                        (ncTraceConfig nc)
                        trace
                        nodeKernelData
                        (llEKGDirect loggingLayer)
+                       baseTrace
+                       forwardTrace
+                       mbEkgTrace
+                       loggerConfiguration
+                       bi
+
           Async.withAsync (handlePeersListSimple trace nodeKernelData)
               $ \_peerLogingThread ->
                 -- We ignore peer loging thread if it dies, but it will be killed
@@ -163,7 +200,8 @@ logTracingVerbosity nc tracer =
         NormalVerbosity -> traceWith tracer "tracing verbosity = normal verbosity "
         MinimalVerbosity -> traceWith tracer "tracing verbosity = minimal verbosity "
         MaximalVerbosity -> traceWith tracer "tracing verbosity = maximal verbosity "
-
+    TraceDispatcher _traceConf ->
+      pure ()
 -- | Add the application name and unqualified hostname to the logging
 -- layer basic trace.
 --
@@ -191,6 +229,16 @@ handlePeersListSimple tr nodeKern = forever $ do
   getCurrentPeers nodeKern >>= tracePeers tr
   threadDelay 2000000 -- 2 seconds.
 
+isOldLogging :: TraceOptions -> Bool
+isOldLogging TracingOff            = False
+isOldLogging (TracingOn _)         = True
+isOldLogging (TraceDispatcher _) = False
+
+isNewLogging :: TraceOptions -> Bool
+isNewLogging TracingOff            = False
+isNewLogging (TracingOn _)         = False
+isNewLogging (TraceDispatcher _) = True
+
 -- | Sets up a simple node, which will run the chain sync protocol and block
 -- fetch protocol, and, if core, will also look at the mempool when trying to
 -- create a new block.
@@ -216,7 +264,9 @@ handleSimpleNode scp runP trace nodeTracers nc onKernel = do
   let pInfo = Protocol.protocolInfo runP
       tracer = toLogObject trace
 
-  createTracers nc trace tracer
+  if isOldLogging (ncTraceConfig nc)
+    then createTracers nc trace tracer
+    else pure ()
 
   (publicIPv4SocketOrAddr, publicIPv6SocketOrAddr, localSocketOrPath) <- do
     result <- runExceptT (gatherConfiguredSockets nc)
@@ -257,18 +307,30 @@ handleSimpleNode scp runP trace nodeTracers nc onKernel = do
   ipv4 <- traverse getSocketOrSocketInfoAddr publicIPv4SocketOrAddr
   ipv6 <- traverse getSocketOrSocketInfoAddr publicIPv6SocketOrAddr
 
-  traceNamedObject
-    (appendName "addresses" trace)
-    (meta, LogMessage . Text.pack . show $ catMaybes [ipv4, ipv6])
-  traceNamedObject
-    (appendName "diffusion-mode" trace)
-    (meta, LogMessage . Text.pack . show . ncDiffusionMode $ nc)
-  traceNamedObject
-    (appendName "dns-producers" trace)
-    (meta, LogMessage . Text.pack . show $ dnsProducers)
-  traceNamedObject
-    (appendName "ip-producers" trace)
-    (meta, LogMessage . Text.pack . show $ ipProducers)
+  if isOldLogging (ncTraceConfig nc)
+    then do
+      traceNamedObject
+        (appendName "addresses" trace)
+        (meta, LogMessage . Text.pack . show $ catMaybes [ipv4, ipv6])
+      traceNamedObject
+        (appendName "diffusion-mode" trace)
+        (meta, LogMessage . Text.pack . show . ncDiffusionMode $ nc)
+      traceNamedObject
+        (appendName "dns-producers" trace)
+        (meta, LogMessage . Text.pack . show $ dnsProducers)
+      traceNamedObject
+        (appendName "ip-producers" trace)
+        (meta, LogMessage . Text.pack . show $ ipProducers)
+    else if isNewLogging (ncTraceConfig nc)
+      then do
+        let bin = BasicInfoNetwork {
+                    niAddresses     = catMaybes [ipv4, ipv6]
+                  , niDiffusionMode = ncDiffusionMode $ nc
+                  , niDnsProducers  = dnsProducers
+                  , niIpProducers   = ipProducers
+                  }
+        traceWith (basicInfoTracer nodeTracers) (BINetwork bin)
+      else pure ()
 
   withShutdownHandling nc trace $ \sfds ->
    Node.run

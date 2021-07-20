@@ -148,9 +148,16 @@ instance FromJSON PartialNodeConfiguration where
       pncMaxConcurrencyDeadline <- Last <$> v .:? "MaxConcurrencyDeadline"
 
       -- Logging parameters
-      pncLoggingSwitch <- Last . Just <$> v .:? "TurnOnLogging" .!= True
-      pncLogMetrics    <- Last        <$> v .:? "TurnOnLogMetrics"
-      pncTraceConfig   <- Last . Just <$> traceConfigParser v
+      pncLoggingSwitch'  <-                 v .:? "TurnOnLogging" .!= True
+      pncLogMetrics      <- Last        <$> v .:? "TurnOnLogMetrics"
+      useTraceDispatcher <-                 v .:? "UseTraceDispatcher" .!= False
+      pncTraceConfig     <- if pncLoggingSwitch'
+                            then Last . Just <$>
+                                 traceConfigParser v
+                                 (if useTraceDispatcher
+                                  then TraceDispatcher
+                                  else TracingOn)
+                            else return . Last $ Just TracingOff
 
       -- Protocol parameters
       protocol <-  v .:? "Protocol" .!= ByronProtocol
@@ -175,7 +182,7 @@ instance FromJSON PartialNodeConfiguration where
            , pncTestEnableDevelopmentNetworkProtocols
            , pncMaxConcurrencyBulkSync
            , pncMaxConcurrencyDeadline
-           , pncLoggingSwitch
+           , pncLoggingSwitch = Last $ Just pncLoggingSwitch'
            , pncLogMetrics
            , pncTraceConfig
            , pncNodeIPv4Addr = mempty

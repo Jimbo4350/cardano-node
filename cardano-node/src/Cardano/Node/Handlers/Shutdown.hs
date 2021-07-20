@@ -1,3 +1,4 @@
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -33,7 +34,7 @@ import qualified System.Process as IO (createPipeFd)
 import           Cardano.BM.Data.Tracer (TracingVerbosity (..), severityNotice, trTransformer)
 import           Cardano.BM.Trace
 import           Cardano.Slotting.Slot (WithOrigin (..))
-import           Control.Tracer
+import "contra-tracer" Control.Tracer
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Consensus.Util.STM (Watcher(..), forkLinkedWatcher)

@@ -75,6 +75,29 @@ library
                        Cardano.Node.Run
                        Cardano.Node.STM
                        Cardano.Node.Types
+                       Cardano.TraceDispatcher.Era.Byron
+                       Cardano.TraceDispatcher.Era.HardFork
+                       Cardano.TraceDispatcher.Era.Shelley
+                       Cardano.TraceDispatcher.Era.ConvertTxId
+                       Cardano.TraceDispatcher.ChainDB.Docu
+                       Cardano.TraceDispatcher.ChainDB.Formatting
+                       Cardano.TraceDispatcher.ChainDB.Combinators
+                       Cardano.TraceDispatcher.Consensus.Docu
+                       Cardano.TraceDispatcher.Consensus.Formatting
+                       Cardano.TraceDispatcher.Consensus.Combinators
+                       Cardano.TraceDispatcher.Consensus.StateInfo
+                       Cardano.TraceDispatcher.Consensus.StartLeadershipCheck
+                       Cardano.TraceDispatcher.Consensus.ForgingThreadStats
+                       Cardano.TraceDispatcher.Resources
+                       Cardano.TraceDispatcher.BasicInfo.Types
+                       Cardano.TraceDispatcher.BasicInfo.Combinators
+                       Cardano.TraceDispatcher.Peer
+                       Cardano.TraceDispatcher.Network.Docu
+                       Cardano.TraceDispatcher.Network.Formatting
+                       Cardano.TraceDispatcher.Network.Combinators
+                       Cardano.TraceDispatcher.Formatting
+                       Cardano.TraceDispatcher.Render
+                       Cardano.TraceDispatcher.Tracers
                        Cardano.Tracing.Config
                        Cardano.Tracing.Constraints
                        Cardano.Tracing.ConvertTxId
@@ -145,6 +168,7 @@ library
                       , text
                       , time
                       , tracer-transformers
+                      , trace-dispatcher
                       , transformers
                       , transformers-except
                       , unordered-containers

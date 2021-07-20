@@ -1,0 +1,93 @@
+cabal-version:       2.4
+name:                trace-forward-demo
+version:             0.1.0
+synopsis:            See README for more info
+description:         See README for more info
+license:             Apache-2.0
+license-file:        LICENSE
+copyright:           2021 Input Output (Hong Kong) Ltd.
+author:              IOHK
+maintainer:          operations@iohk.io
+build-type:          Simple
+extra-doc-files:     README.md
+
+executable demo-acceptor
+  main-is:             acceptor.hs
+  build-depends:         base
+                       , contra-tracer
+                       , ouroboros-network-framework
+                       , stm
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       -with-rtsopts=-T
+
+executable demo-forwarder
+  main-is:             forwarder.hs
+  build-depends:         async
+                       , base
+                       , contra-tracer
+                       , ouroboros-network-framework
+                       , stm
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       -with-rtsopts=-T
+
+executable demo-acceptor-mux
+  main-is:             acceptor-mux.hs
+  build-depends:         async
+                       , base
+                       , bytestring
+                       , cborg
+                       , contra-tracer
+                       , ekg-core
+                       , ekg-forward
+                       , network
+                       , ouroboros-network-framework
+                       , stm
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       -with-rtsopts=-T
+
+executable demo-forwarder-mux
+  main-is:             forwarder-mux.hs
+  build-depends:         async
+                       , base
+                       , bytestring
+                       , cborg
+                       , contra-tracer
+                       , ekg-core
+                       , ekg-forward
+                       , network
+                       , ouroboros-network-framework
+                       , stm
+                       , text
+                       , time
+                       , trace-dispatcher
+                       , trace-forward
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -threaded
+                       -rtsopts
+                       -with-rtsopts=-T

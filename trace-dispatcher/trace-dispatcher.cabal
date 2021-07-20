@@ -1,0 +1,123 @@
+cabal-version:        2.4
+name:                 trace-dispatcher
+version:              0.1.0.0
+
+synopsis:             Package for development of simple and efficient tracers
+                      based on the arrow based contra-tracer package
+author:               Juergen Nicklisch-Franken
+maintainer:           operations@iohk.io
+copyright:            2020 IOHK
+extra-source-files:   CHANGELOG.md
+                      README.md
+                      doc/trace-dispatcher.md
+                      src/Cardano/Logging/Resources/os-support-darwin.h
+                      src/Cardano/Logging/Resources/os-support-win.h
+
+library
+  hs-source-dirs:     src
+  exposed-modules:    Cardano.Logging
+                      Cardano.Logging.Types
+                      Cardano.Logging.Trace
+                      Cardano.Logging.Configuration
+                      Cardano.Logging.DocuGenerator
+                      Cardano.Logging.Formatter
+                      Cardano.Logging.FrequencyLimiter
+                      Cardano.Logging.Resources
+                      Cardano.Logging.Resources.Types
+                      Cardano.Logging.Tracer.EKG
+                      Cardano.Logging.Tracer.Standard
+                      Cardano.Logging.Tracer.Forward
+                      Control.Tracer.Arrow
+                      Control.Tracer
+
+  default-language:   Haskell2010
+  default-extensions: OverloadedStrings
+  build-depends:      base >=4.12 && <5
+                      , aeson
+                      , async
+                      , bytestring
+                      , cborg
+                      , containers
+                      , contra-tracer
+                      , ekg
+                      , ekg-core
+                      , ekg-forward
+                      , hostname
+                      , network
+                      , ouroboros-network-framework
+                      , serialise
+                      , stm
+                      , text
+                      , time
+                      , trace-forward
+                      , unagi-chan
+                      , unliftio
+                      , unliftio-core
+                      , unordered-containers
+                      , yaml
+
+  if os(windows)
+     build-depends:    Win32
+  else
+     build-depends:    unix
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-incomplete-patterns
+
+  if os(linux)
+    exposed-modules:   Cardano.Logging.Resources.Linux
+  if os(windows)
+    exposed-modules:   Cardano.Logging.Resources.Windows
+    c-sources:         src/Cardano/Logging/Resources/os-support-win.c
+    include-dirs:      src/Cardano/Logging/Resources/
+    cc-options:        -DPSAPI_VERSION=2
+  if os(darwin)
+    exposed-modules:   Cardano.Logging.Resources.Darwin
+    c-sources:         src/Cardano/Logging/Resources/os-support-darwin.c
+    include-dirs:      src/Cardano/Logging/Resources/
+
+executable trace-dispatcher-examples
+    main-is:          Main.hs
+    other-modules:    Examples.TestObjects
+                      Examples.Aggregation
+                      Examples.Trivial
+                      Examples.Routing
+                      Examples.EKG
+                      Examples.Configuration
+                      Examples.FrequencyLimiting
+                      Examples.Documentation
+    hs-source-dirs:   test
+    default-language: Haskell2010
+    default-extensions:  OverloadedStrings
+    build-depends:    base >=4.12 && <5
+                      , aeson
+                      , bytestring
+                      , containers
+                      , ekg
+                      , ekg-core
+                      , hostname
+                      , text
+                      , trace-dispatcher
+                      , time
+                      , unagi-chan
+                      , unliftio
+                      , unliftio-core
+                      , stm
+                      , unordered-containers
+                      , yaml
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-incomplete-patterns

@@ -1,0 +1,11 @@
+.cabal-sandbox
+dist
+cabal.sandbox.config
+TAGS
+.stack-work/
+*.o
+*.hi
+*.dyn_o
+*.dyn_hi
+stack.yaml.lock
+*.pdf

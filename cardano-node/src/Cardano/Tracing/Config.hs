@@ -4,7 +4,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
-
 module Cardano.Tracing.Config
   ( TraceOptions (..)
   , TraceSelection (..)
@@ -19,13 +18,13 @@ import           Data.Aeson.Types (Parser)
 import           Data.Text (pack)
 
 import           Cardano.BM.Tracing (TracingVerbosity (..))
-
 import           Cardano.Node.Orphans ()
 
 
 data TraceOptions
   = TracingOff
   | TracingOn TraceSelection
+  | TraceDispatcher TraceSelection
   deriving (Eq, Show)
 
 type TraceAcceptPolicy = ("TraceAcceptPolicy" :: Symbol)
@@ -114,8 +113,8 @@ data TraceSelection
   } deriving (Eq, Show)
 
 
-traceConfigParser :: Object -> Parser TraceOptions
-traceConfigParser v =
+traceConfigParser :: Object -> (TraceSelection -> TraceOptions) -> Parser TraceOptions
+traceConfigParser v ctor =
   let acceptPolicy :: OnOff TraceAcceptPolicy
       acceptPolicy = OnOff False
       blockFetchClient :: OnOff TraceBlockFetchClient
@@ -185,7 +184,7 @@ traceConfigParser v =
       txSubmission2Protocol :: OnOff TraceTxSubmission2Protocol
       txSubmission2Protocol = OnOff False in
 
-  TracingOn <$> (TraceSelection
+  ctor <$> (TraceSelection
     <$> v .:? "TracingVerbosity" .!= NormalVerbosity
     -- Per-trace toggles, alpha-sorted.
     <*> v .:? getName acceptPolicy .!= acceptPolicy

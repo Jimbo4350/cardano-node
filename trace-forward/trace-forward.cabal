@@ -1,0 +1,62 @@
+cabal-version:       2.4
+name:                trace-forward
+version:             0.1.0
+synopsis:            See README for more info
+description:         See README for more info
+license:             Apache-2.0
+license-file:        LICENSE
+copyright:           2021 Input Output (Hong Kong) Ltd.
+author:              IOHK
+maintainer:          operations@iohk.io
+build-type:          Simple
+extra-doc-files:     README.md
+                     CHANGELOG.md
+
+common common-options
+  build-depends:       base >=4.12 && <5
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Widentities
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+  if impl(ghc >= 8.0)
+    ghc-options:       -Wredundant-constraints
+  if impl(ghc >= 8.2)
+    ghc-options:       -fhide-source-paths
+  if impl(ghc >= 8.4)
+    ghc-options:       -Wmissing-export-lists
+                       -Wpartial-fields
+
+  default-language:    Haskell2010
+
+library
+  import:              common-options
+  hs-source-dirs:      src
+
+  exposed-modules:     Trace.Forward.Acceptor
+                       Trace.Forward.Configuration
+                       Trace.Forward.Forwarder
+                       Trace.Forward.Queue
+
+                       Trace.Forward.Network.Acceptor
+                       Trace.Forward.Network.Forwarder
+
+                       Trace.Forward.Protocol.Acceptor
+                       Trace.Forward.Protocol.Codec
+                       Trace.Forward.Protocol.Forwarder
+                       Trace.Forward.Protocol.Limits
+                       Trace.Forward.Protocol.Type
+
+  build-depends:         async
+                       , bytestring
+                       , cborg
+                       , contra-tracer
+                       , io-classes
+                       , network
+                       , ouroboros-network-framework
+                       , serialise
+                       , stm
+                       , text
+                       , time
+                       , typed-protocols

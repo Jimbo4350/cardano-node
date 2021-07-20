@@ -54,6 +54,10 @@ import           Cardano.Node.Types
 import           Cardano.Tracing.OrphanInstances.HardFork ()
 import           Cardano.Tracing.OrphanInstances.Shelley ()
 
+import           Cardano.TraceDispatcher.Era.HardFork ()
+import           Cardano.TraceDispatcher.Era.Shelley ()
+import           Cardano.TraceDispatcher.Formatting ()
+
 import           Cardano.Node.Protocol.Types
 
 ------------------------------------------------------------------------------

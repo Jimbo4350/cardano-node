@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -42,8 +43,9 @@ import qualified System.Remote.Monitoring as EKG
 import           Network.Mux (MuxTrace, WithMuxBearer)
 import qualified Network.Socket as Socket (SockAddr)
 
-import           Control.Tracer
+import "contra-tracer" Control.Tracer
 import           Control.Tracer.Transformers
+import           Cardano.TraceDispatcher.BasicInfo.Types (BasicInfo)
 
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 
@@ -96,6 +98,7 @@ import           Cardano.Tracing.Metrics
 import           Cardano.Tracing.Queries
 
 import           Cardano.Node.Configuration.Logging
+
 -- For tracing instances
 import           Cardano.Node.Protocol.Byron ()
 import           Cardano.Node.Protocol.Shelley ()
@@ -139,6 +142,7 @@ data Tracers peer localPeer blk = Tracers
   , handshakeTracer :: Tracer IO NtN.HandshakeTr
   , localHandshakeTracer :: Tracer IO NtC.HandshakeTr
   , diffusionInitializationTracer :: Tracer IO ND.DiffusionInitializationTracer
+  , basicInfoTracer :: Tracer IO BasicInfo
   }
 
 data ForgeTracers = ForgeTracers
@@ -173,6 +177,7 @@ nullTracers = Tracers
   , handshakeTracer = nullTracer
   , localHandshakeTracer = nullTracer
   , diffusionInitializationTracer = nullTracer
+  , basicInfoTracer = nullTracer
   }
 
 
@@ -276,11 +281,11 @@ instance (StandardHash header, Eq peer) => ElidingTracer
 mkTracers
   :: forall peer localPeer blk.
      ( Consensus.RunNode blk
-     , HasKESMetricsData blk
-     , HasKESInfo blk
      , TraceConstraints blk
-     , Show peer, Eq peer, ToObject peer
-     , Show localPeer, ToObject localPeer
+     , Show peer, Eq peer
+     , Show localPeer
+     , ToObject peer
+     , ToObject localPeer
      )
   => BlockConfig blk
   -> TraceOptions
@@ -316,12 +321,14 @@ mkTracers blockConfig tOpts@(TracingOn trSel) tr nodeKern ekgDirect = do
     , handshakeTracer = tracerOnOff (traceHandshake trSel) verb "Handshake" tr
     , localHandshakeTracer = tracerOnOff (traceLocalHandshake trSel) verb "LocalHandshake" tr
     , diffusionInitializationTracer = tracerOnOff (traceDiffusionInitialization trSel) verb "DiffusionInitializationTracer" tr
+    , basicInfoTracer = nullTracer
     }
  where
    verb :: TracingVerbosity
    verb = traceVerbosity trSel
 
-mkTracers _ TracingOff _ _ _ =
+-- otherwise tracing off
+mkTracers _ _ _ _ _ =
   pure Tracers
     { chainDBTracer = nullTracer
     , consensusTracers = Consensus.Tracers
@@ -364,6 +371,7 @@ mkTracers _ TracingOff _ _ _ =
     , handshakeTracer = nullTracer
     , localHandshakeTracer = nullTracer
     , diffusionInitializationTracer = nullTracer
+    , basicInfoTracer = nullTracer
     }
 
 --------------------------------------------------------------------------------
@@ -386,6 +394,7 @@ teeTraceChainTip
   -> Trace IO Text
   -> Tracer IO (WithSeverity (ChainDB.TraceEvent blk))
 teeTraceChainTip _ _ TracingOff _ _ _ _ = nullTracer
+teeTraceChainTip _ _ TraceDispatcher{} _ _ _ _ = nullTracer
 teeTraceChainTip blockConfig fStats (TracingOn trSel) elided ekgDirect trTrc trMet =
   Tracer $ \ev -> do
     traceWith (teeTraceChainTipElide (traceVerbosity trSel) elided trTrc) ev
@@ -501,6 +510,7 @@ mkConsensusTracers
   :: forall blk peer localPeer.
      ( Show peer
      , Eq peer
+     , ToObject peer
      , LedgerQueries blk
      , ToJSON (GenTxId blk)
      , ToObject (ApplyTxErr blk)
@@ -510,7 +520,6 @@ mkConsensusTracers
      , ToObject (OtherHeaderEnvelopeError blk)
      , ToObject (ValidationErr (BlockProtocol blk))
      , ToObject (ForgeStateUpdateError blk)
-     , ToObject peer
      , Consensus.RunNode blk
      , HasKESMetricsData blk
      , HasKESInfo blk
@@ -968,8 +977,8 @@ nodeToClientTracers'
      , Show (ApplyTxErr blk)
      , Show (GenTx blk)
      , Show localPeer
-     , ToObject localPeer
      , ShowQuery (Query blk)
+     , ToObject localPeer
      )
   => TraceSelection
   -> TracingVerbosity

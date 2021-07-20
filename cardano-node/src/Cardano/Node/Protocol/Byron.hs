@@ -39,6 +39,10 @@ import           Cardano.Tracing.OrphanInstances.Byron ()
 import           Cardano.Tracing.OrphanInstances.HardFork ()
 import           Cardano.Tracing.OrphanInstances.Shelley ()
 
+import           Cardano.TraceDispatcher.Era.Byron ()
+import           Cardano.TraceDispatcher.Era.HardFork ()
+import           Cardano.TraceDispatcher.ChainDB.Formatting ()
+
 
 ------------------------------------------------------------------------------
 -- Byron protocol

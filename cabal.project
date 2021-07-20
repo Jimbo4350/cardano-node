@@ -9,6 +9,10 @@ packages:
     cardano-node-chairman
     cardano-submit-api
     cardano-testnet
+    cardano-tracer
+    trace-dispatcher
+    trace-forward
+    trace-forward-demo
     nix/workbench/cardano-topology
     bench/tx-generator
     nix/workbench/locli
@@ -36,6 +40,8 @@ package cryptonite
   -- generation is dubious. Set the flag so we use /dev/urandom by default.
   flags: -support_rdrand
 
+package trace-dispatcher
+  ghc-options: -Werror
 -- ---------------------------------------------------------
 -- Disable all tests by default
 
@@ -99,6 +105,12 @@ package io-classes
 
 package cardano-ledger-alonzo-test
   tests: False
+
+package trace-dispatcher
+  tests: False
+
+package cardano-tracer
+  tests: True
 
 -- ---------------------------------------------------------
 
@@ -231,6 +243,12 @@ source-repository-package
   location: https://github.com/Quid2/flat.git
   tag: 95e5d7488451e43062ca84d5376b3adcc465f1cd
   --sha256: 06l31x3y93rjpryvlxnpsyq2zyxvb0z6lik6yq2fvh36i5zwvwa3
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/ekg-forward
+  tag: d3e8a3abe2b55e72aca79212b053b4aabade91f4
+  --sha256: 04gwrmkkq0ami6qff0vsi8i5m4qan6pv7jj76k2b88qhk0407wyj
 
 constraints:
     hedgehog >= 1.0
